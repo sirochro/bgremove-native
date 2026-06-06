@@ -42,12 +42,12 @@ class JsAPI:
     """Exposed to JS as ``window.pywebview.api``. Video tab uses this for file dialogs."""
 
     def __init__(self) -> None:
-        self.window: Optional[webview.Window] = None
+        self._window: Optional[webview.Window] = None
 
     def open_input_video(self) -> Optional[str]:
-        if self.window is None:
+        if self._window is None:
             return None
-        result = self.window.create_file_dialog(
+        result = self._window.create_file_dialog(
             webview.OPEN_DIALOG,
             allow_multiple=False,
             file_types=(
@@ -62,10 +62,10 @@ class JsAPI:
     def save_output_video(
         self, suggested_name: str = "output.mov", ext: str = "mov"
     ) -> Optional[str]:
-        if self.window is None:
+        if self._window is None:
             return None
         label = {"mov": "MOV (*.mov)", "webm": "WebM (*.webm)"}.get(ext, f"*.{ext}")
-        result = self.window.create_file_dialog(
+        result = self._window.create_file_dialog(
             webview.SAVE_DIALOG,
             save_filename=suggested_name,
             file_types=(label, "All files (*.*)"),
@@ -92,7 +92,7 @@ def main() -> int:
         height=WINDOW_HEIGHT,
         js_api=api,
     )
-    api.window = window
+    api._window = window
     webview.start()
     return 0
 
