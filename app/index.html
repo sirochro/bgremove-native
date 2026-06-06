@@ -37,6 +37,9 @@
   .col-form .slider-row .hint { font-size: 11px; color: #777; }
   .col-form .check-line { display: flex; gap: 6px; align-items: center; font-size: 13px; color: #ccc; }
   .col-form .check-line input[type=checkbox] { accent-color: #5aa0d8; }
+  .col-form .dual-pair { grid-column: 1 / 3; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .col-form .dual-pair .pair-item { display: grid; grid-template-columns: 90px 1fr; gap: 10px 14px; align-items: center; }
+  .col-form .dual-pair .pair-item label { font-size: 13px; color: #aaa; }
 
   /* Drop zone (right column) */
   .col-drop { display: flex; }
@@ -49,8 +52,10 @@
   .img-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .pane { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 14px; }
   .pane h3 { font-size: 11px; margin: 0 0 10px; color: #888; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
-  .img-wrap { display: flex; align-items: center; justify-content: center; min-height: 360px; background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; border-radius: 4px; }
-  .img-wrap img { max-width: 100%; max-height: 65vh; display: block; }
+  .img-wrap { position: relative; display: flex; align-items: center; justify-content: center; min-height: 360px; background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; border-radius: 4px; }
+  .img-wrap img { max-width: 100%; max-height: 65vh; display: block; position: relative; z-index: 1; }
+  .img-wrap img:not([src]), .img-wrap img[src=""] { display: none; }
+  .img-wrap .placeholder { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #555; font-size: 13px; pointer-events: none; }
 
   /* Buttons */
   button { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-family: inherit; }
@@ -132,28 +137,28 @@
 
       <div class="col-drop">
         <div id="img-drop">
-          <p>ドロップ</p>
+          <p>クリックで選択 ｜ファイルをドロップ</p>
           <input type="file" id="img-file" accept="image/*">
         </div>
       </div>
     </div>
 
     <div class="actions">
-      <button id="img-defaults">Default に戻す</button>
+      <button id="img-defaults">リセット</button>
     </div>
     <div class="msg" id="img-status"></div>
   </section>
 
-  <section id="img-panes" style="display:none">
+  <section id="img-panes">
     <h2>プレビュー</h2>
     <div class="img-grid">
       <div class="pane">
         <h3>Original</h3>
-        <div class="img-wrap"><img id="img-orig"></div>
+        <div class="img-wrap"><span class="placeholder">ファイル選択で表示</span><img id="img-orig"></div>
       </div>
       <div class="pane">
         <h3>Removed</h3>
-        <div class="img-wrap"><img id="img-result"></div>
+        <div class="img-wrap"><span class="placeholder">ファイル選択で表示</span><img id="img-result"></div>
         <div class="actions">
           <button class="primary" id="img-download" disabled>Download PNG</button>
         </div>
@@ -169,10 +174,7 @@
     <div class="topgrid">
       <div class="col-form">
         <label>入力ソース</label>
-        <div class="input-with-btn">
-          <input type="text" id="v-input" readonly placeholder="（未選択）">
-          <button id="v-pick-input">選択...</button>
-        </div>
+        <input type="text" id="v-input" readonly placeholder="（未選択）">
 
         <label>出力先</label>
         <div class="input-with-btn">
@@ -183,21 +185,26 @@
         <label>モデル</label>
         <select id="v-model"></select>
 
-        <label>出力形式</label>
-        <select id="v-format">
-          <option value="prores" selected>MOV ProRes 4444 (alpha)</option>
-          <option value="webm">WebM VP9 (alpha)</option>
-        </select>
-
-        <label>downsample</label>
-        <select id="v-dsr">
-          <option value="">auto (推奨)</option>
-          <option value="1.0">1.0 (SD)</option>
-          <option value="0.5">0.5</option>
-          <option value="0.375">0.375 (720p)</option>
-          <option value="0.25">0.25 (1080p)</option>
-          <option value="0.125">0.125 (4K)</option>
-        </select>
+        <div class="dual-pair">
+          <div class="pair-item">
+            <label>出力形式</label>
+            <select id="v-format">
+              <option value="prores" selected>MOV ProRes 4444 (alpha)</option>
+              <option value="webm">WebM VP9 (alpha)</option>
+            </select>
+          </div>
+          <div class="pair-item">
+            <label>downsample</label>
+            <select id="v-dsr">
+              <option value="">auto (推奨)</option>
+              <option value="1.0">1.0 (SD)</option>
+              <option value="0.5">0.5</option>
+              <option value="0.375">0.375 (720p)</option>
+              <option value="0.25">0.25 (1080p)</option>
+              <option value="0.125">0.125 (4K)</option>
+            </select>
+          </div>
+        </div>
 
         <label>下限カット</label>
         <div class="slider-row">
@@ -233,28 +240,28 @@
 
       <div class="col-drop">
         <div id="v-drop">
-          <p>ドロップ</p>
+          <p>クリックで選択 ｜ファイルをドロップ</p>
         </div>
       </div>
     </div>
 
     <div class="actions">
-      <button id="v-defaults">Default に戻す</button>
+      <button id="v-defaults">リセット</button>
       <button class="primary" id="v-start" disabled>処理開始</button>
     </div>
     <div class="msg" id="v-msg"></div>
   </section>
 
-  <section id="v-preview-section" style="display:none">
+  <section id="v-preview-section">
     <h2>プレビュー（1 フレーム目）</h2>
     <div class="img-grid">
       <div class="pane">
         <h3>Original</h3>
-        <div class="img-wrap"><img id="v-prev-orig"></div>
+        <div class="img-wrap"><span class="placeholder">ファイル選択で表示</span><img id="v-prev-orig"></div>
       </div>
       <div class="pane">
         <h3>Removed</h3>
-        <div class="img-wrap"><img id="v-prev-result"></div>
+        <div class="img-wrap"><span class="placeholder">ファイル選択で表示</span><img id="v-prev-result"></div>
       </div>
     </div>
     <div class="msg" id="v-prev-msg"></div>
@@ -359,7 +366,6 @@ async function refreshHealth() {
   const orig = $('img-orig'), result = $('img-result'), dl = $('img-download');
   const saveMsg = $('img-save-msg');
 
-  let currentFile = null;
   let currentResultId = null;
   let processing = false;
   let queued = false;
@@ -380,40 +386,79 @@ async function refreshHealth() {
     loadParams();
   });
 
-  pickBtn.addEventListener('click', () => file.click());
-  drop.addEventListener('click', () => file.click());
+  async function pickViaPywebview() {
+    if (!window.pywebview || !window.pywebview.api) {
+      status.textContent = 'pywebview API unavailable';
+      status.className = 'msg error';
+      return null;
+    }
+    return await window.pywebview.api.open_input_image();
+  }
+
+  pickBtn.addEventListener('click', async () => {
+    const path = await pickViaPywebview();
+    if (path) setImageInput(path);
+  });
+  drop.addEventListener('click', async () => {
+    const path = await pickViaPywebview();
+    if (path) setImageInput(path);
+  });
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-  drop.addEventListener('drop', e => {
+  drop.addEventListener('drop', async e => {
     e.preventDefault(); drop.classList.remove('over');
-    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    await uploadAndSet(f);
   });
-  file.addEventListener('change', () => { if (file.files.length) handleFile(file.files[0]); });
+  file.addEventListener('change', async () => {
+    if (!file.files.length) return;
+    await uploadAndSet(file.files[0]);
+  });
 
-  // Model change → immediate reprocess
   modelSel.addEventListener('change', () => {
     saveParams();
-    if (currentFile) requestProcess(0);
+    if (pathInput.value) requestProcess(0);
   });
 
-  // Slider input → debounced reprocess (and persist immediately)
   ['img-alpha-low', 'img-alpha-high', 'img-edge-expand', 'img-feather'].forEach(id => {
     $(id).addEventListener('input', () => {
       saveParams();
-      if (currentFile) requestProcess(300);
+      if (pathInput.value) requestProcess(300);
     });
   });
 
   $('img-defaults').addEventListener('click', () => {
     resetDefaults(IMG_DEFAULTS);
-    if (currentFile) requestProcess(0);
+    pathInput.value = '';
+    currentResultId = null;
+    orig.removeAttribute('src');
+    result.removeAttribute('src');
+    dl.disabled = true;
+    status.textContent = ''; status.className = 'msg';
+    saveMsg.textContent = ''; saveMsg.className = 'msg';
   });
 
-  function handleFile(f) {
-    currentFile = f;
-    pathInput.value = f.name;
+  async function uploadAndSet(f) {
+    status.textContent = 'アップロード中...';
+    status.className = 'msg';
+    const fd = new FormData();
+    fd.append('image', f);
+    try {
+      const r = await fetch('/api/image/upload', { method: 'POST', body: fd });
+      if (!r.ok) throw new Error(r.statusText);
+      const j = await r.json();
+      setImageInput(j.path);
+    } catch (err) {
+      status.textContent = 'アップロード失敗: ' + err.message;
+      status.className = 'msg error';
+    }
+  }
+
+  function setImageInput(path) {
+    pathInput.value = path;
     panes.style.display = 'block';
-    orig.src = URL.createObjectURL(f);
+    orig.src = `/api/image/source?path=${encodeURIComponent(path)}&ts=${Date.now()}`;
     result.removeAttribute('src');
     dl.disabled = true;
     saveMsg.textContent = ''; saveMsg.className = 'msg';
@@ -429,7 +474,7 @@ async function refreshHealth() {
   }
 
   async function processImage() {
-    if (!currentFile) return;
+    if (!pathInput.value) return;
     if (processing) { queued = true; return; }
     processing = true;
     queued = false;
@@ -438,17 +483,22 @@ async function refreshHealth() {
     status.textContent = `Processing... (model: ${modelSel.value})`;
     status.className = 'msg';
 
-    const fd = new FormData();
-    fd.append('image', currentFile);
-    fd.append('model', modelSel.value);
-    fd.append('alpha_low', $('img-alpha-low').value);
-    fd.append('alpha_high', $('img-alpha-high').value);
-    fd.append('edge_expand', $('img-edge-expand').value);
-    fd.append('feather', $('img-feather').value);
+    const body = {
+      input_path: pathInput.value,
+      model: modelSel.value,
+      alpha_low: parseInt($('img-alpha-low').value, 10) || 0,
+      alpha_high: parseInt($('img-alpha-high').value, 10) || 255,
+      edge_expand: parseInt($('img-edge-expand').value, 10) || 0,
+      feather: parseInt($('img-feather').value, 10) || 0,
+    };
 
     const t0 = performance.now();
     try {
-      const r = await fetch('/api/image/remove', { method: 'POST', body: fd });
+      const r = await fetch('/api/image/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
       if (!r.ok) {
         const err = await r.json().catch(() => ({ detail: r.statusText }));
         throw new Error(err.detail || r.statusText);
@@ -469,6 +519,11 @@ async function refreshHealth() {
     }
   }
 
+  function pathBase(path) {
+    const name = path.replace(/\\/g, '/').split('/').pop() || 'image';
+    return name.replace(/\.[^.]+$/, '') || 'image';
+  }
+
   dl.addEventListener('click', async () => {
     if (!currentResultId) return;
     saveMsg.textContent = '';
@@ -478,8 +533,7 @@ async function refreshHealth() {
       saveMsg.className = 'msg error';
       return;
     }
-    const base = currentFile.name.replace(/\.[^.]+$/, '') || 'image';
-    const suggested = base + '_removed.png';
+    const suggested = pathBase(pathInput.value) + '_removed.png';
     const path = await window.pywebview.api.save_output_image(suggested);
     if (!path) return;
     const r = await fetch('/api/image/save', {
@@ -567,13 +621,13 @@ V_PARAM_IDS.forEach(id => {
 
 $('v-defaults').addEventListener('click', () => {
   resetDefaults(V_DEFAULTS);
-  if (vInPath.value) requestVideoPreview(0);
-});
-
-$('v-pick-input').addEventListener('click', async () => {
-  if (!window.pywebview || !window.pywebview.api) { vMsg.textContent = 'pywebview API unavailable'; return; }
-  const path = await window.pywebview.api.open_input_video();
-  if (path) { setVideoInput(path); }
+  vInPath.value = '';
+  vOutPath.value = '';
+  vPrevOrig.removeAttribute('src');
+  vPrevResult.removeAttribute('src');
+  vMsg.textContent = ''; vMsg.className = 'msg';
+  vPrevMsg.textContent = ''; vPrevMsg.className = 'msg';
+  updateVStartEnabled();
 });
 
 vDrop.addEventListener('click', async () => {

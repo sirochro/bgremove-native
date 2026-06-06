@@ -14,7 +14,7 @@ from app.server import app
 
 WINDOW_TITLE = "bgremove-native"
 WINDOW_WIDTH = 1280
-WINDOW_HEIGHT = 860
+WINDOW_HEIGHT = 960
 
 
 def find_free_port() -> int:
@@ -85,6 +85,21 @@ class JsAPI:
         if not result:
             return None
         return result if isinstance(result, str) else result[0]
+
+    def open_input_image(self) -> Optional[str]:
+        if self._window is None:
+            return None
+        result = self._window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            allow_multiple=False,
+            file_types=(
+                "Image files (*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.webp;*.gif)",
+                "All files (*.*)",
+            ),
+        )
+        if not result:
+            return None
+        return result[0] if isinstance(result, (list, tuple)) else result
 
 
 def main() -> int:
