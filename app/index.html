@@ -107,32 +107,32 @@
         <label>モデル</label>
         <select id="img-model"></select>
 
-        <label class="gap-top">下限カット</label>
+        <label class="gap-top">薄背景カット</label>
         <div class="slider-row gap-top">
           <input type="range" id="img-alpha-low" min="0" max="255" value="0">
           <span class="val" id="img-alpha-low-v">0</span>
-          <span class="hint">↑ 半透明領域を切る／ ↓ 髪等の自然な半透明を残す</span>
+          <span class="hint">↑ 半透明領域を切る／ ↓ 髪等の自然な半透明を残す（デフォルト 0）</span>
         </div>
 
-        <label>上限固定</label>
+        <label>縁の透け止め</label>
         <div class="slider-row">
           <input type="range" id="img-alpha-high" min="100" max="255" value="255">
           <span class="val" id="img-alpha-high-v">255</span>
-          <span class="hint">↓ 縁の透けを止める／ 255 = 元のまま</span>
+          <span class="hint">↑ 縁の透けを残す／ ↓ 縁の透けを止める（デフォルト 255）</span>
         </div>
 
-        <label>エッジ拡縮</label>
+        <label>エッジ</label>
         <div class="slider-row">
           <input type="range" id="img-edge-expand" min="-5" max="5" value="0">
           <span class="val" id="img-edge-expand-v">0</span>
           <span class="hint">− 縁を内側に削る／ + 縁を外側に広げる</span>
         </div>
 
-        <label>フェザー</label>
+        <label>ぼかし</label>
         <div class="slider-row">
           <input type="range" id="img-feather" min="0" max="20" value="0">
           <span class="val" id="img-feather-v">0</span>
-          <span class="hint">↑ 縁が柔らかく／ 0 = 元のまま</span>
+          <span class="hint">↑ 縁が柔らかく／ ↓ 縁がシャープに（デフォルト 0）</span>
         </div>
       </div>
 
@@ -205,32 +205,32 @@
           </div>
         </div>
 
-        <label class="gap-top">下限カット</label>
+        <label class="gap-top">薄背景カット</label>
         <div class="slider-row gap-top">
           <input type="range" id="v-alpha-low" min="0" max="255" value="0">
           <span class="val" id="v-alpha-low-v">0</span>
-          <span class="hint">↑ 半透明領域を切る／ ↓ 髪等の自然な半透明を残す</span>
+          <span class="hint">↑ 半透明領域を切る／ ↓ 髪等の自然な半透明を残す（デフォルト 0）</span>
         </div>
 
-        <label>上限固定</label>
+        <label>縁の透け止め</label>
         <div class="slider-row">
           <input type="range" id="v-alpha-high" min="100" max="255" value="255">
           <span class="val" id="v-alpha-high-v">255</span>
-          <span class="hint">↓ 縁の透けを止める／ 255 = 元のまま</span>
+          <span class="hint">↑ 縁の透けを残す／ ↓ 縁の透けを止める（デフォルト 255）</span>
         </div>
 
-        <label>エッジ拡縮</label>
+        <label>エッジ</label>
         <div class="slider-row">
           <input type="range" id="v-edge-expand" min="-5" max="5" value="0">
           <span class="val" id="v-edge-expand-v">0</span>
           <span class="hint">− 縁を内側に削る／ + 縁を外側に広げる</span>
         </div>
 
-        <label>フェザー</label>
+        <label>ぼかし</label>
         <div class="slider-row">
           <input type="range" id="v-feather" min="0" max="20" value="0">
           <span class="val" id="v-feather-v">0</span>
-          <span class="hint">↑ 縁が柔らかく／ 0 = 元のまま</span>
+          <span class="hint">↑ 縁が柔らかく／ ↓ 縁がシャープに（デフォルト 0）</span>
         </div>
 
         <label>音声</label>
