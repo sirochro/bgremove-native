@@ -74,6 +74,18 @@ class JsAPI:
             return None
         return result if isinstance(result, str) else result[0]
 
+    def save_output_image(self, suggested_name: str = "output.png") -> Optional[str]:
+        if self._window is None:
+            return None
+        result = self._window.create_file_dialog(
+            webview.SAVE_DIALOG,
+            save_filename=suggested_name,
+            file_types=("PNG (*.png)", "All files (*.*)"),
+        )
+        if not result:
+            return None
+        return result if isinstance(result, str) else result[0]
+
 
 def main() -> int:
     port = find_free_port()

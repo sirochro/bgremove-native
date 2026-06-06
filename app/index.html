@@ -23,16 +23,15 @@
   section h2 { font-size: 11px; margin: 0 0 12px; color: #888; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
 
   /* Image panel */
-  #img-drop { border: 2px dashed #444; border-radius: 8px; padding: 60px; text-align: center; color: #888; cursor: pointer; transition: all 0.15s; }
+  #img-drop { border: 2px dashed #444; border-radius: 8px; padding: 36px; text-align: center; color: #888; cursor: pointer; transition: all 0.15s; }
   #img-drop.over { border-color: #4a9eff; background: #0f1f30; color: #4a9eff; }
+  #img-drop p { margin: 0; }
   #img-drop input { display: none; }
-  #img-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .img-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .pane { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 14px; }
   .pane h3 { font-size: 11px; margin: 0 0 10px; color: #888; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
   .img-wrap { display: flex; align-items: center; justify-content: center; min-height: 360px; background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; border-radius: 4px; }
   .img-wrap img { max-width: 100%; max-height: 65vh; display: block; }
-  .img-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
-  .img-controls label { font-size: 13px; color: #aaa; }
 
   /* Video panel */
   .grid { display: grid; grid-template-columns: 130px 1fr auto; gap: 10px 14px; align-items: center; }
@@ -92,15 +91,24 @@
 <!-- ============ IMAGE TAB ============ -->
 <div id="panel-image" class="panel active">
   <section>
-    <div class="img-controls">
-      <label>Model: <select id="img-model"></select></label>
-      <div id="img-status" style="margin-left:auto; font-size:13px; color:#888;">Ready</div>
+    <div class="grid">
+      <label>入力画像</label>
+      <input type="text" id="img-path" readonly placeholder="（未選択）">
+      <button id="img-pick">選択...</button>
+
+      <label>モデル</label>
+      <select id="img-model"></select><span></span>
     </div>
-    <div id="img-drop">
-      <p>クリックまたは画像をドロップ</p>
+    <div id="img-drop" style="margin-top:14px;">
+      <p>または画像をここにドロップ</p>
       <input type="file" id="img-file" accept="image/*">
     </div>
-    <div id="img-panes" style="display:none">
+    <div class="msg" id="img-status"></div>
+  </section>
+
+  <section id="img-panes" style="display:none">
+    <h2>プレビュー</h2>
+    <div class="img-grid">
       <div class="pane">
         <h3>Original</h3>
         <div class="img-wrap"><img id="img-orig"></div>
@@ -109,10 +117,11 @@
         <h3>Removed</h3>
         <div class="img-wrap"><img id="img-result"></div>
         <div class="actions">
-          <button id="img-download" disabled>Download PNG</button>
+          <button class="primary" id="img-download" disabled>Download PNG</button>
         </div>
       </div>
     </div>
+    <div class="msg" id="img-save-msg"></div>
   </section>
 </div>
 
@@ -242,11 +251,15 @@ async function refreshHealth() {
 /* ============ Image tab ============ */
 (() => {
   const drop = $('img-drop'), file = $('img-file'), status = $('img-status');
+  const pathInput = $('img-path'), pickBtn = $('img-pick');
   const modelSel = $('img-model');
   const panes = $('img-panes');
   const orig = $('img-orig'), result = $('img-result'), dl = $('img-download');
-  let resultBlob = null;
-  let lastFileName = 'image';
+  const saveMsg = $('img-save-msg');
+
+  let currentFile = null;       // File object (Blob)
+  let currentResultId = null;
+  let processing = false;
 
   fetch('/api/image/models').then(r => r.json()).then(data => {
     data.models.forEach(m => {
@@ -257,50 +270,92 @@ async function refreshHealth() {
     });
   });
 
+  pickBtn.addEventListener('click', () => file.click());
   drop.addEventListener('click', () => file.click());
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('over'));
   drop.addEventListener('drop', e => {
     e.preventDefault(); drop.classList.remove('over');
-    if (e.dataTransfer.files.length) process(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
   });
-  file.addEventListener('change', () => { if (file.files.length) process(file.files[0]); });
+  file.addEventListener('change', () => { if (file.files.length) handleFile(file.files[0]); });
 
-  async function process(f) {
-    lastFileName = f.name.replace(/\.[^.]+$/, '') || 'image';
-    panes.style.display = 'grid';
+  modelSel.addEventListener('change', () => {
+    if (currentFile && !processing) processImage();
+  });
+
+  function handleFile(f) {
+    currentFile = f;
+    pathInput.value = f.name;
+    panes.style.display = 'block';
     orig.src = URL.createObjectURL(f);
     result.removeAttribute('src');
     dl.disabled = true;
-    status.textContent = 'Processing...';
+    saveMsg.textContent = ''; saveMsg.className = 'msg';
+    processImage();
+  }
+
+  async function processImage() {
+    if (!currentFile || processing) return;
+    processing = true;
+    currentResultId = null;
+    dl.disabled = true;
+    status.textContent = 'Processing... (model: ' + modelSel.value + ')';
+    status.className = 'msg';
+
     const fd = new FormData();
-    fd.append('image', f);
+    fd.append('image', currentFile);
     fd.append('model', modelSel.value);
+
     const t0 = performance.now();
     try {
-      const res = await fetch('/api/image/remove', { method: 'POST', body: fd });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail || res.statusText);
+      const r = await fetch('/api/image/remove', { method: 'POST', body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || r.statusText);
       }
-      resultBlob = await res.blob();
-      result.src = URL.createObjectURL(resultBlob);
+      const j = await r.json();
+      currentResultId = j.result_id;
+      result.src = `/api/image/result/${currentResultId}?ts=${Date.now()}`;
       const dt = ((performance.now() - t0) / 1000).toFixed(2);
-      status.textContent = `Done (${dt}s, ${modelSel.value})`;
+      status.textContent = `Done (${dt}s, ${j.model})`;
+      status.className = 'msg success';
       dl.disabled = false;
     } catch (e) {
       status.textContent = 'Error: ' + e.message;
+      status.className = 'msg error';
+    } finally {
+      processing = false;
     }
   }
 
-  dl.addEventListener('click', () => {
-    if (!resultBlob) return;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(resultBlob);
-    a.download = lastFileName + '_removed.png';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  dl.addEventListener('click', async () => {
+    if (!currentResultId) return;
+    saveMsg.textContent = '';
+    saveMsg.className = 'msg';
+    if (!window.pywebview || !window.pywebview.api) {
+      saveMsg.textContent = 'pywebview API unavailable';
+      saveMsg.className = 'msg error';
+      return;
+    }
+    const base = currentFile.name.replace(/\.[^.]+$/, '') || 'image';
+    const suggested = base + '_removed.png';
+    const path = await window.pywebview.api.save_output_image(suggested);
+    if (!path) return;
+    const r = await fetch('/api/image/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ result_id: currentResultId, output_path: path }),
+    });
+    if (r.ok) {
+      const j = await r.json();
+      saveMsg.textContent = `保存しました: ${path} (${(j.bytes / 1024).toFixed(1)} KB)`;
+      saveMsg.className = 'msg success';
+    } else {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      saveMsg.textContent = 'Save failed: ' + (err.detail || r.statusText);
+      saveMsg.className = 'msg error';
+    }
   });
 })();
 
