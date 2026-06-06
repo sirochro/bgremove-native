@@ -22,10 +22,10 @@
   section { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 18px; margin-bottom: 16px; }
   section h2 { font-size: 11px; margin: 0 0 12px; color: #888; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
 
-  /* Image panel */
-  #img-drop { border: 2px dashed #444; border-radius: 8px; padding: 36px; text-align: center; color: #888; cursor: pointer; transition: all 0.15s; }
-  #img-drop.over { border-color: #4a9eff; background: #0f1f30; color: #4a9eff; }
-  #img-drop p { margin: 0; }
+  /* Drop zones (image + video) */
+  #img-drop, #v-drop { border: 2px dashed #444; border-radius: 8px; padding: 36px; text-align: center; color: #888; cursor: pointer; transition: all 0.15s; }
+  #img-drop.over, #v-drop.over { border-color: #4a9eff; background: #0f1f30; color: #4a9eff; }
+  #img-drop p, #v-drop p { margin: 0; }
   #img-drop input { display: none; }
   .img-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .pane { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 14px; }
@@ -229,7 +229,25 @@
       <button id="v-defaults">Default に戻す</button>
       <button class="primary" id="v-start" disabled>処理開始</button>
     </div>
+    <div id="v-drop" style="margin-top:14px;">
+      <p>または動画をここにドロップ</p>
+    </div>
     <div class="msg" id="v-msg"></div>
+  </section>
+
+  <section id="v-preview-section" style="display:none">
+    <h2>プレビュー（1 フレーム目）</h2>
+    <div class="img-grid">
+      <div class="pane">
+        <h3>Original</h3>
+        <div class="img-wrap"><img id="v-prev-orig"></div>
+      </div>
+      <div class="pane">
+        <h3>Removed</h3>
+        <div class="img-wrap"><img id="v-prev-result"></div>
+      </div>
+    </div>
+    <div class="msg" id="v-prev-msg"></div>
   </section>
 
   <section id="v-progress-section">
@@ -477,7 +495,14 @@ const vMsg = $('v-msg'), vMsg2 = $('v-msg2');
 const vProgressSec = $('v-progress-section');
 const vPbarFill = $('v-pbar-fill');
 const vInPath = $('v-input'), vOutPath = $('v-output');
+const vDrop = $('v-drop');
+const vPreviewSec = $('v-preview-section');
+const vPrevOrig = $('v-prev-orig'), vPrevResult = $('v-prev-result');
+const vPrevMsg = $('v-prev-msg');
 let vCurrentJobId = null, vCurrentES = null;
+let vPreviewTimer = null;
+let vPreviewing = false;
+let vPreviewQueued = false;
 
 function formatEta(sec) {
   if (!sec || !isFinite(sec)) return '—';
@@ -543,12 +568,104 @@ V_PARAM_IDS.forEach(id => {
 
 $('v-defaults').addEventListener('click', () => {
   resetDefaults(V_DEFAULTS);
+  if (vInPath.value) requestVideoPreview(0);
 });
 
 $('v-pick-input').addEventListener('click', async () => {
   if (!window.pywebview || !window.pywebview.api) { vMsg.textContent = 'pywebview API unavailable'; return; }
   const path = await window.pywebview.api.open_input_video();
-  if (path) { vInPath.value = path; updateVStartEnabled(); }
+  if (path) { setVideoInput(path); }
+});
+
+vDrop.addEventListener('click', async () => {
+  if (!window.pywebview || !window.pywebview.api) { vMsg.textContent = 'pywebview API unavailable'; return; }
+  const path = await window.pywebview.api.open_input_video();
+  if (path) { setVideoInput(path); }
+});
+vDrop.addEventListener('dragover', e => { e.preventDefault(); vDrop.classList.add('over'); });
+vDrop.addEventListener('dragleave', () => vDrop.classList.remove('over'));
+vDrop.addEventListener('drop', async e => {
+  e.preventDefault(); vDrop.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (!f) return;
+  vMsg.textContent = 'アップロード中...'; vMsg.className = 'msg';
+  const fd = new FormData();
+  fd.append('video', f);
+  try {
+    const r = await fetch('/api/video/upload', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error(r.statusText);
+    const j = await r.json();
+    vMsg.textContent = `アップロード完了: ${j.name}`; vMsg.className = 'msg success';
+    setVideoInput(j.path);
+  } catch (err) {
+    vMsg.textContent = 'アップロード失敗: ' + err.message;
+    vMsg.className = 'msg error';
+  }
+});
+
+function setVideoInput(path) {
+  vInPath.value = path;
+  updateVStartEnabled();
+  requestVideoPreview(0);
+}
+
+function requestVideoPreview(delay) {
+  if (vPreviewTimer) clearTimeout(vPreviewTimer);
+  vPreviewTimer = setTimeout(() => {
+    vPreviewTimer = null;
+    previewVideo();
+  }, delay);
+}
+
+async function previewVideo() {
+  if (!vInPath.value || !vModelSel.value) return;
+  if (vPreviewing) { vPreviewQueued = true; return; }
+  vPreviewing = true; vPreviewQueued = false;
+  vPreviewSec.style.display = 'block';
+  vPrevMsg.textContent = 'Processing preview...'; vPrevMsg.className = 'msg';
+  const body = {
+    input_path: vInPath.value,
+    model: vModelSel.value,
+    alpha_low: parseInt($('v-alpha-low').value, 10) || 0,
+    alpha_high: parseInt($('v-alpha-high').value, 10) || 255,
+    edge_expand: parseInt($('v-edge-expand').value, 10) || 0,
+    feather: parseInt($('v-feather').value, 10) || 0,
+  };
+  const dsr = $('v-dsr').value;
+  if (dsr) body.downsample_ratio = parseFloat(dsr);
+  const t0 = performance.now();
+  try {
+    const r = await fetch('/api/video/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      throw new Error(err.detail || r.statusText);
+    }
+    const j = await r.json();
+    vPrevOrig.src = `/api/video/preview/${j.orig_id}?ts=${Date.now()}`;
+    vPrevResult.src = `/api/video/preview/${j.proc_id}?ts=${Date.now()}`;
+    const dt = ((performance.now() - t0) / 1000).toFixed(2);
+    const info = j.info;
+    vPrevMsg.textContent = `${info.width}x${info.height} ${info.fps.toFixed(2)}fps ${info.n_frames.toLocaleString()}f / preview ${dt}s`;
+    vPrevMsg.className = 'msg success';
+  } catch (e) {
+    vPrevMsg.textContent = 'Preview error: ' + e.message;
+    vPrevMsg.className = 'msg error';
+  } finally {
+    vPreviewing = false;
+    if (vPreviewQueued) previewVideo();
+  }
+}
+
+// Model / param changes trigger debounced preview
+vModelSel.addEventListener('change', () => { if (vInPath.value) requestVideoPreview(0); });
+['v-alpha-low', 'v-alpha-high', 'v-edge-expand', 'v-feather', 'v-dsr'].forEach(id => {
+  const el = $(id); if (!el) return;
+  const ev = el.tagName === 'SELECT' ? 'change' : 'input';
+  el.addEventListener(ev, () => { if (vInPath.value) requestVideoPreview(300); });
 });
 
 $('v-pick-output').addEventListener('click', async () => {

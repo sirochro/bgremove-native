@@ -3,21 +3,39 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import tempfile
+import uuid
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app.video.jobs import Job, JobManager, JobStatus
 from app.video.pipeline import FFMPEG, FFPROBE
+from app.video.preview import preview_frame
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 MODELS_DIR = ROOT / "models"
 
 router = APIRouter()
 _manager = JobManager()
+
+# Cache: result_id → PNG bytes (used for first-frame previews).
+_MAX_PREVIEWS = 40
+_previews: "OrderedDict[str, bytes]" = OrderedDict()
+
+
+def _add_preview(data: bytes) -> str:
+    pid = uuid.uuid4().hex[:12]
+    _previews[pid] = data
+    while len(_previews) > _MAX_PREVIEWS:
+        _previews.popitem(last=False)
+    return pid
 
 
 def list_models() -> list[dict]:
@@ -41,6 +59,68 @@ def health() -> dict:
         "ready": FFMPEG.exists() and FFPROBE.exists() and bool(models),
     }
 
+
+# ---------------- Upload (for dropped files that have no usable path) ----------------
+
+@router.post("/upload")
+async def upload_video(video: UploadFile = File(...)) -> dict:
+    """Save a dropped video to a temp file and return its full path."""
+    suffix = Path(video.filename or "video.mp4").suffix or ".mp4"
+    tmpdir = Path(tempfile.gettempdir()) / "bgremove_uploads"
+    tmpdir.mkdir(exist_ok=True)
+    dest = tmpdir / f"{uuid.uuid4().hex[:8]}{suffix}"
+    with dest.open("wb") as fh:
+        shutil.copyfileobj(video.file, fh)
+    return {"path": str(dest), "name": video.filename}
+
+
+# ---------------- First-frame preview ----------------
+
+class PreviewRequest(BaseModel):
+    input_path: str
+    model: str
+    alpha_low: int = 0
+    alpha_high: int = 255
+    edge_expand: int = 0
+    feather: int = 0
+    downsample_ratio: Optional[float] = None
+
+
+@router.post("/preview")
+def create_preview(req: PreviewRequest) -> dict:
+    models = {m["name"]: m["path"] for m in list_models()}
+    if req.model not in models:
+        raise HTTPException(400, f"Unknown model: {req.model}")
+    if not Path(req.input_path).exists():
+        raise HTTPException(400, f"Input file not found: {req.input_path}")
+    try:
+        orig, proc, info = preview_frame(
+            req.input_path,
+            models[req.model],
+            alpha_low=req.alpha_low,
+            alpha_high=req.alpha_high,
+            edge_expand=req.edge_expand,
+            feather=req.feather,
+            downsample_ratio=req.downsample_ratio,
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"Preview failed: {exc}") from exc
+    return {
+        "orig_id": _add_preview(orig),
+        "proc_id": _add_preview(proc),
+        "info": info,
+    }
+
+
+@router.get("/preview/{pid}")
+def get_preview(pid: str) -> Response:
+    data = _previews.get(pid)
+    if data is None:
+        raise HTTPException(404, "Preview not found")
+    return Response(content=data, media_type="image/png")
+
+
+# ---------------- Jobs (full encode) ----------------
 
 class JobRequest(BaseModel):
     input_path: str
