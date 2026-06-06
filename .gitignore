@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+.venv/
+venv/
+
+# uv
+.python-version.local
+
+# Build
+build/
+dist/
+*.spec.bak
+
+# Models / binaries (large, fetched by setup.bat)
+models/*.onnx
+bin/ffmpeg.exe
+bin/ffprobe.exe
+
+# Local work
+work/
+out/
+*.mov
+*.mp4
+*.webm
+*.png
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+*.log

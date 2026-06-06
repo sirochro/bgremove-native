@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>bgremove-native</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, "Segoe UI", "Hiragino Sans", sans-serif; margin: 0; background: #1a1a1a; color: #e0e0e0; }
+  header { padding: 10px 20px; background: #0f0f0f; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 20px; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 500; color: #ccc; }
+  .tabs { display: flex; gap: 4px; }
+  .tab { background: transparent; color: #888; border: 1px solid transparent; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: inherit; transition: all 0.15s; }
+  .tab:hover { color: #ccc; background: #1a1a1a; }
+  .tab.active { color: #e0e0e0; background: #2a2a2a; border-color: #444; }
+  #status-pill { margin-left: auto; padding: 4px 10px; border-radius: 12px; font-size: 12px; background: #2a2a2a; color: #aaa; }
+  #status-pill.ok { background: #1f3a1f; color: #6fcf6f; }
+  #status-pill.warn { background: #3a2a1f; color: #f0a060; }
+  main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  section { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 18px; margin-bottom: 16px; }
+  section h2 { font-size: 11px; margin: 0 0 12px; color: #888; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  /* Image panel */
+  #img-drop { border: 2px dashed #444; border-radius: 8px; padding: 60px; text-align: center; color: #888; cursor: pointer; transition: all 0.15s; }
+  #img-drop.over { border-color: #4a9eff; background: #0f1f30; color: #4a9eff; }
+  #img-drop input { display: none; }
+  #img-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .pane { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 14px; }
+  .pane h3 { font-size: 11px; margin: 0 0 10px; color: #888; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+  .img-wrap { display: flex; align-items: center; justify-content: center; min-height: 360px; background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; border-radius: 4px; }
+  .img-wrap img { max-width: 100%; max-height: 65vh; display: block; }
+  .img-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+  .img-controls label { font-size: 13px; color: #aaa; }
+
+  /* Video panel */
+  .grid { display: grid; grid-template-columns: 130px 1fr auto; gap: 10px 14px; align-items: center; }
+  .grid label { font-size: 13px; color: #aaa; }
+  .grid input[type=text], .grid select { background: #1a1a1a; color: #e0e0e0; border: 1px solid #333; padding: 7px 10px; border-radius: 4px; font-size: 13px; width: 100%; font-family: inherit; }
+  .grid input[readonly] { background: #161616; color: #888; }
+  .grid .hint { font-size: 11px; color: #777; align-self: center; }
+  .slider-row { display: flex; gap: 10px; align-items: center; }
+  .slider-row input[type=range] { flex: 1; accent-color: #5aa0d8; }
+  .slider-row span { min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; color: #aaa; }
+  .check-line { display: flex; gap: 6px; align-items: center; font-size: 13px; color: #ccc; }
+  .check-line input[type=checkbox] { accent-color: #5aa0d8; }
+
+  #env-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; font-size: 13px; }
+  .env-row { display: flex; gap: 8px; align-items: center; }
+  .env-row .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; flex-shrink: 0; }
+  .env-row.ok .dot { background: #6fcf6f; }
+  .env-row.bad .dot { background: #cf6f6f; }
+  .env-row .label { color: #aaa; }
+  .env-row .value { color: #ccc; margin-left: auto; font-size: 12px; }
+
+  /* Buttons */
+  button { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-family: inherit; }
+  button:hover:not(:disabled) { background: #333; border-color: #555; }
+  button.primary { background: #2a5a8a; border-color: #3a6a9a; }
+  button.primary:hover:not(:disabled) { background: #356eaa; }
+  button.danger { background: #5a2a2a; border-color: #6a3a3a; }
+  button.danger:hover:not(:disabled) { background: #7a3a3a; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .actions { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* Progress */
+  #v-progress-section { display: none; }
+  .pbar { height: 10px; background: #1a1a1a; border-radius: 5px; overflow: hidden; border: 1px solid #333; }
+  .pbar > div { height: 100%; background: linear-gradient(90deg, #3a7abe, #5aa0d8); transition: width 0.2s; width: 0; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; font-size: 13px; }
+  .stat { background: #1a1a1a; padding: 10px 12px; border-radius: 4px; border: 1px solid #2a2a2a; }
+  .stat .k { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .stat .v { color: #e0e0e0; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .msg { margin-top: 10px; font-size: 13px; color: #888; min-height: 18px; }
+  .msg.error { color: #cf6f6f; }
+  .msg.success { color: #6fcf6f; }
+</style>
+</head>
+<body>
+<header>
+  <h1>bgremove-native</h1>
+  <div class="tabs">
+    <button class="tab active" data-tab="image">画像</button>
+    <button class="tab" data-tab="video">動画</button>
+  </div>
+  <div id="status-pill">checking...</div>
+</header>
+
+<main>
+
+<!-- ============ IMAGE TAB ============ -->
+<div id="panel-image" class="panel active">
+  <section>
+    <div class="img-controls">
+      <label>Model: <select id="img-model"></select></label>
+      <div id="img-status" style="margin-left:auto; font-size:13px; color:#888;">Ready</div>
+    </div>
+    <div id="img-drop">
+      <p>クリックまたは画像をドロップ</p>
+      <input type="file" id="img-file" accept="image/*">
+    </div>
+    <div id="img-panes" style="display:none">
+      <div class="pane">
+        <h3>Original</h3>
+        <div class="img-wrap"><img id="img-orig"></div>
+      </div>
+      <div class="pane">
+        <h3>Removed</h3>
+        <div class="img-wrap"><img id="img-result"></div>
+        <div class="actions">
+          <button id="img-download" disabled>Download PNG</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ============ VIDEO TAB ============ -->
+<div id="panel-video" class="panel">
+  <section>
+    <h2>環境チェック</h2>
+    <div id="v-env-list"></div>
+  </section>
+
+  <section>
+    <h2>ジョブ</h2>
+    <div class="grid">
+      <label>入力動画</label>
+      <input type="text" id="v-input" readonly placeholder="（未選択）">
+      <button id="v-pick-input">選択...</button>
+
+      <label>出力先</label>
+      <input type="text" id="v-output" readonly placeholder="（未選択）">
+      <button id="v-pick-output">保存先...</button>
+
+      <label>モデル</label>
+      <select id="v-model"></select><span></span>
+
+      <label>出力形式</label>
+      <select id="v-format">
+        <option value="prores" selected>MOV ProRes 4444 (alpha)</option>
+        <option value="webm">WebM VP9 (alpha)</option>
+      </select><span></span>
+
+      <label>downsample</label>
+      <select id="v-dsr">
+        <option value="">auto (推奨)</option>
+        <option value="1.0">1.0 (SD)</option>
+        <option value="0.5">0.5</option>
+        <option value="0.375">0.375 (720p)</option>
+        <option value="0.25">0.25 (1080p)</option>
+        <option value="0.125">0.125 (4K)</option>
+      </select><span></span>
+
+      <label>下限カット</label>
+      <div class="slider-row">
+        <input type="range" id="v-alpha-low" min="0" max="255" value="0">
+        <span id="v-alpha-low-v">0</span>
+      </div>
+      <span class="hint">↑ 半透明領域を切る（背景の薄い残骸が消える）／ ↓ 髪等の自然な半透明を残す</span>
+
+      <label>上限固定</label>
+      <div class="slider-row">
+        <input type="range" id="v-alpha-high" min="100" max="255" value="255">
+        <span id="v-alpha-high-v">255</span>
+      </div>
+      <span class="hint">↓ 縁の透けを止める（被写体の縁を完全不透明に固定）／ 255 = 元のまま</span>
+
+      <label>エッジ拡縮</label>
+      <div class="slider-row">
+        <input type="range" id="v-edge-expand" min="-5" max="5" value="0">
+        <span id="v-edge-expand-v">0</span>
+      </div>
+      <span class="hint">− 縁を内側に削る（背景の侵入対策）／ + 縁を外側に広げる（髪の毛救出）</span>
+
+      <label>フェザー</label>
+      <div class="slider-row">
+        <input type="range" id="v-feather" min="0" max="20" value="0">
+        <span id="v-feather-v">0</span>
+      </div>
+      <span class="hint">↑ 縁が柔らかく（ジャギ消し）／ 0 = 元のまま</span>
+
+      <label>音声</label>
+      <label class="check-line"><input type="checkbox" id="v-mute"> 元動画の音声を含めない</label>
+      <span></span>
+    </div>
+    <div class="actions">
+      <button class="primary" id="v-start" disabled>処理開始</button>
+    </div>
+    <div class="msg" id="v-msg"></div>
+  </section>
+
+  <section id="v-progress-section">
+    <h2>進捗</h2>
+    <div class="pbar"><div id="v-pbar-fill"></div></div>
+    <div class="stats">
+      <div class="stat"><div class="k">Progress</div><div class="v" id="v-s-pct">0%</div></div>
+      <div class="stat"><div class="k">Frames</div><div class="v" id="v-s-frames">0 / 0</div></div>
+      <div class="stat"><div class="k">FPS</div><div class="v" id="v-s-fps">—</div></div>
+      <div class="stat"><div class="k">ETA</div><div class="v" id="v-s-eta">—</div></div>
+    </div>
+    <div class="actions">
+      <button class="danger" id="v-cancel">キャンセル</button>
+    </div>
+    <div class="msg" id="v-msg2"></div>
+  </section>
+</div>
+
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+/* ============ Tabs ============ */
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
+    document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + target));
+  });
+});
+
+/* ============ Status pill (health) ============ */
+const pill = $('status-pill');
+async function refreshHealth() {
+  try {
+    const [imgR, vidR] = await Promise.all([
+      fetch('/api/image/health').then(r => r.json()),
+      fetch('/api/video/health').then(r => r.json()),
+    ]);
+    refreshVideoEnv(vidR);
+    const ready = vidR.ready;  // image side has no missing-binaries case
+    pill.textContent = ready ? 'Ready' : 'Setup required';
+    pill.className = ready ? 'ok' : 'warn';
+  } catch {
+    pill.textContent = 'Offline';
+    pill.className = 'warn';
+  }
+}
+
+/* ============ Image tab ============ */
+(() => {
+  const drop = $('img-drop'), file = $('img-file'), status = $('img-status');
+  const modelSel = $('img-model');
+  const panes = $('img-panes');
+  const orig = $('img-orig'), result = $('img-result'), dl = $('img-download');
+  let resultBlob = null;
+  let lastFileName = 'image';
+
+  fetch('/api/image/models').then(r => r.json()).then(data => {
+    data.models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      if (m === data.default) opt.selected = true;
+      modelSel.appendChild(opt);
+    });
+  });
+
+  drop.addEventListener('click', () => file.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('over');
+    if (e.dataTransfer.files.length) process(e.dataTransfer.files[0]);
+  });
+  file.addEventListener('change', () => { if (file.files.length) process(file.files[0]); });
+
+  async function process(f) {
+    lastFileName = f.name.replace(/\.[^.]+$/, '') || 'image';
+    panes.style.display = 'grid';
+    orig.src = URL.createObjectURL(f);
+    result.removeAttribute('src');
+    dl.disabled = true;
+    status.textContent = 'Processing...';
+    const fd = new FormData();
+    fd.append('image', f);
+    fd.append('model', modelSel.value);
+    const t0 = performance.now();
+    try {
+      const res = await fetch('/api/image/remove', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || res.statusText);
+      }
+      resultBlob = await res.blob();
+      result.src = URL.createObjectURL(resultBlob);
+      const dt = ((performance.now() - t0) / 1000).toFixed(2);
+      status.textContent = `Done (${dt}s, ${modelSel.value})`;
+      dl.disabled = false;
+    } catch (e) {
+      status.textContent = 'Error: ' + e.message;
+    }
+  }
+
+  dl.addEventListener('click', () => {
+    if (!resultBlob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(resultBlob);
+    a.download = lastFileName + '_removed.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+})();
+
+/* ============ Video tab ============ */
+const envList = $('v-env-list'), vModelSel = $('v-model');
+const vStartBtn = $('v-start'), vCancelBtn = $('v-cancel');
+const vMsg = $('v-msg'), vMsg2 = $('v-msg2');
+const vProgressSec = $('v-progress-section');
+const vPbarFill = $('v-pbar-fill');
+const vInPath = $('v-input'), vOutPath = $('v-output');
+let vCurrentJobId = null, vCurrentES = null;
+
+function formatEta(sec) {
+  if (!sec || !isFinite(sec)) return '—';
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h > 0 ? `${h}h ${m}m` : (m > 0 ? `${m}m ${s}s` : `${s}s`);
+}
+
+function refreshVideoEnv(h) {
+  envList.innerHTML = '';
+  const rows = [
+    { ok: h.ffmpeg, label: 'ffmpeg.exe', value: h.ffmpeg ? 'OK' : 'setup.bat を実行してください' },
+    { ok: h.ffprobe, label: 'ffprobe.exe', value: h.ffprobe ? 'OK' : 'setup.bat を実行してください' },
+    { ok: h.models.length > 0, label: 'RVM モデル', value: h.models.length ? h.models.map(m => `${m.name} (${m.size_mb}MB)`).join(', ') : 'setup.bat を実行してください' },
+  ];
+  rows.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'env-row ' + (r.ok ? 'ok' : 'bad');
+    div.innerHTML = `<div class="dot"></div><div class="label">${r.label}</div><div class="value">${r.value}</div>`;
+    envList.appendChild(div);
+  });
+  vModelSel.innerHTML = '';
+  if (h.models.length) {
+    h.models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.name; opt.textContent = m.name;
+      if (m.name.includes('resnet50')) opt.selected = true;
+      vModelSel.appendChild(opt);
+    });
+  } else {
+    const opt = document.createElement('option');
+    opt.textContent = '(no models)'; opt.disabled = true;
+    vModelSel.appendChild(opt);
+  }
+  updateVStartEnabled();
+}
+
+function updateVStartEnabled() {
+  vStartBtn.disabled = !(vInPath.value && vOutPath.value && vModelSel.value && !vCurrentJobId);
+}
+
+function bindSlider(id, valueId) {
+  const inp = $(id), val = $(valueId);
+  const sync = () => { val.textContent = inp.value; };
+  inp.addEventListener('input', sync);
+  sync();
+}
+bindSlider('v-alpha-low', 'v-alpha-low-v');
+bindSlider('v-alpha-high', 'v-alpha-high-v');
+bindSlider('v-edge-expand', 'v-edge-expand-v');
+bindSlider('v-feather', 'v-feather-v');
+
+$('v-pick-input').addEventListener('click', async () => {
+  if (!window.pywebview || !window.pywebview.api) { vMsg.textContent = 'pywebview API unavailable'; return; }
+  const path = await window.pywebview.api.open_input_video();
+  if (path) { vInPath.value = path; updateVStartEnabled(); }
+});
+
+$('v-pick-output').addEventListener('click', async () => {
+  if (!window.pywebview || !window.pywebview.api) { vMsg.textContent = 'pywebview API unavailable'; return; }
+  const fmt = $('v-format').value;
+  const ext = fmt === 'webm' ? 'webm' : 'mov';
+  const base = vInPath.value ? vInPath.value.replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '') : 'output';
+  const suggested = `${base}_alpha.${ext}`;
+  const path = await window.pywebview.api.save_output_video(suggested, ext);
+  if (path) { vOutPath.value = path; updateVStartEnabled(); }
+});
+
+$('v-format').addEventListener('change', () => {
+  if (vOutPath.value) {
+    const ext = $('v-format').value === 'webm' ? 'webm' : 'mov';
+    vOutPath.value = vOutPath.value.replace(/\.[^.]+$/, '.' + ext);
+  }
+});
+
+vStartBtn.addEventListener('click', async () => {
+  vMsg.textContent = ''; vMsg.className = 'msg';
+  const body = {
+    input_path: vInPath.value,
+    output_path: vOutPath.value,
+    model: vModelSel.value,
+    output_format: $('v-format').value,
+    alpha_low: parseInt($('v-alpha-low').value, 10) || 0,
+    alpha_high: parseInt($('v-alpha-high').value, 10) || 255,
+    edge_expand: parseInt($('v-edge-expand').value, 10) || 0,
+    feather: parseInt($('v-feather').value, 10) || 0,
+    mute: $('v-mute').checked,
+  };
+  const dsr = $('v-dsr').value;
+  if (dsr) body.downsample_ratio = parseFloat(dsr);
+
+  const r = await fetch('/api/video/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    vMsg.textContent = 'Error: ' + (err.detail || r.statusText);
+    vMsg.className = 'msg error';
+    return;
+  }
+  const { job_id } = await r.json();
+  vCurrentJobId = job_id;
+  vStartBtn.disabled = true;
+  vProgressSec.style.display = 'block';
+  vMsg2.textContent = ''; vMsg2.className = 'msg';
+  vPbarFill.style.width = '0%';
+  $('v-s-pct').textContent = '0%';
+  $('v-s-frames').textContent = '0 / ?';
+  $('v-s-fps').textContent = '—';
+  $('v-s-eta').textContent = '—';
+
+  vCurrentES = new EventSource(`/api/video/jobs/${job_id}/stream`);
+  vCurrentES.onmessage = (ev) => {
+    const j = JSON.parse(ev.data);
+    const pct = Math.round(j.progress * 100);
+    vPbarFill.style.width = pct + '%';
+    $('v-s-pct').textContent = pct + '%';
+    $('v-s-frames').textContent = `${j.n_done.toLocaleString()} / ${j.n_total.toLocaleString()}`;
+    $('v-s-fps').textContent = j.fps ? j.fps.toFixed(1) : '—';
+    $('v-s-eta').textContent = formatEta(j.eta_seconds);
+    if (j.status === 'done') {
+      vMsg2.textContent = `完了 (provider: ${j.provider || 'unknown'})`;
+      vMsg2.className = 'msg success';
+      finishVideoJob();
+    } else if (j.status === 'failed') {
+      vMsg2.textContent = 'Error: ' + (j.error || 'unknown');
+      vMsg2.className = 'msg error';
+      finishVideoJob();
+    } else if (j.status === 'canceled') {
+      vMsg2.textContent = 'キャンセルされました';
+      finishVideoJob();
+    }
+  };
+  vCurrentES.onerror = () => { /* auto-reconnect */ };
+});
+
+vCancelBtn.addEventListener('click', async () => {
+  if (!vCurrentJobId) return;
+  await fetch(`/api/video/jobs/${vCurrentJobId}/cancel`, { method: 'POST' });
+});
+
+function finishVideoJob() {
+  if (vCurrentES) { vCurrentES.close(); vCurrentES = null; }
+  vCurrentJobId = null;
+  updateVStartEnabled();
+}
+
+refreshHealth();
+setInterval(refreshHealth, 5000);
+</script>
+</body>
+</html>
