@@ -13,45 +13,44 @@
   .tab { background: transparent; color: #888; border: 1px solid transparent; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: inherit; transition: all 0.15s; }
   .tab:hover { color: #ccc; background: #1a1a1a; }
   .tab.active { color: #e0e0e0; background: #2a2a2a; border-color: #444; }
-  #status-pill { margin-left: auto; padding: 4px 10px; border-radius: 12px; font-size: 12px; background: #2a2a2a; color: #aaa; }
-  #status-pill.ok { background: #1f3a1f; color: #6fcf6f; }
-  #status-pill.warn { background: #3a2a1f; color: #f0a060; }
+  #env-line { margin-left: auto; padding: 4px 12px; border-radius: 12px; font-size: 12px; background: #2a2a2a; color: #aaa; }
+  #env-line.ok { background: #1f3a1f; color: #6fcf6f; }
+  #env-line.warn { background: #3a2a1f; color: #f0a060; }
+  #env-line.bad { background: #3a1f1f; color: #cf6f6f; }
   main { padding: 20px; max-width: 1400px; margin: 0 auto; }
   .panel { display: none; }
   .panel.active { display: block; }
   section { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 18px; margin-bottom: 16px; }
   section h2 { font-size: 11px; margin: 0 0 12px; color: #888; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
 
-  /* Drop zones (image + video) */
-  #img-drop, #v-drop { border: 2px dashed #444; border-radius: 8px; padding: 36px; text-align: center; color: #888; cursor: pointer; transition: all 0.15s; }
-  #img-drop.over, #v-drop.over { border-color: #4a9eff; background: #0f1f30; color: #4a9eff; }
-  #img-drop p, #v-drop p { margin: 0; }
-  #img-drop input { display: none; }
+  /* Top layout: form + drop side by side */
+  .topgrid { display: grid; grid-template-columns: 1fr 0.32fr; gap: 20px; }
+  .col-form { display: grid; grid-template-columns: 90px 1fr; gap: 10px 14px; align-items: center; align-content: start; }
+  .col-form > label { font-size: 13px; color: #aaa; }
+  .col-form input[type=text], .col-form select { background: #1a1a1a; color: #e0e0e0; border: 1px solid #333; padding: 7px 10px; border-radius: 4px; font-size: 13px; width: 100%; font-family: inherit; }
+  .col-form input[readonly] { background: #161616; color: #888; }
+  .input-with-btn { display: flex; gap: 6px; }
+  .input-with-btn input { flex: 1; min-width: 0; }
+  .col-form .slider-row { display: grid; grid-template-columns: 1fr 36px 1.3fr; gap: 14px; align-items: center; }
+  .col-form .slider-row input[type=range] { width: 100%; min-width: 0; accent-color: #5aa0d8; }
+  .col-form .slider-row .val { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; color: #aaa; }
+  .col-form .slider-row .hint { font-size: 11px; color: #777; }
+  .col-form .check-line { display: flex; gap: 6px; align-items: center; font-size: 13px; color: #ccc; }
+  .col-form .check-line input[type=checkbox] { accent-color: #5aa0d8; }
+
+  /* Drop zone (right column) */
+  .col-drop { display: flex; }
+  .col-drop > div { flex: 1; min-height: 200px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px dashed #444; border-radius: 8px; transition: all 0.15s; color: #888; text-align: center; padding: 24px; font-size: 13px; }
+  .col-drop > div p { margin: 0; }
+  .col-drop > div.over { border-color: #4a9eff; background: #0f1f30; color: #4a9eff; }
+  .col-drop > div input { display: none; }
+
+  /* Preview panes */
   .img-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .pane { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 14px; }
   .pane h3 { font-size: 11px; margin: 0 0 10px; color: #888; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
   .img-wrap { display: flex; align-items: center; justify-content: center; min-height: 360px; background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; border-radius: 4px; }
   .img-wrap img { max-width: 100%; max-height: 65vh; display: block; }
-
-  /* Video panel */
-  .grid { display: grid; grid-template-columns: 130px 1fr auto; gap: 10px 14px; align-items: center; }
-  .grid label { font-size: 13px; color: #aaa; }
-  .grid input[type=text], .grid select { background: #1a1a1a; color: #e0e0e0; border: 1px solid #333; padding: 7px 10px; border-radius: 4px; font-size: 13px; width: 100%; font-family: inherit; }
-  .grid input[readonly] { background: #161616; color: #888; }
-  .grid .hint { font-size: 11px; color: #777; align-self: center; }
-  .slider-row { display: flex; gap: 10px; align-items: center; }
-  .slider-row input[type=range] { flex: 1; accent-color: #5aa0d8; }
-  .slider-row span { min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; color: #aaa; }
-  .check-line { display: flex; gap: 6px; align-items: center; font-size: 13px; color: #ccc; }
-  .check-line input[type=checkbox] { accent-color: #5aa0d8; }
-
-  #env-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; font-size: 13px; }
-  .env-row { display: flex; gap: 8px; align-items: center; }
-  .env-row .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; flex-shrink: 0; }
-  .env-row.ok .dot { background: #6fcf6f; }
-  .env-row.bad .dot { background: #cf6f6f; }
-  .env-row .label { color: #aaa; }
-  .env-row .value { color: #ccc; margin-left: auto; font-size: 12px; }
 
   /* Buttons */
   button { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-family: inherit; }
@@ -61,7 +60,7 @@
   button.danger { background: #5a2a2a; border-color: #6a3a3a; }
   button.danger:hover:not(:disabled) { background: #7a3a3a; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .actions { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end; }
+  .actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
 
   /* Progress */
   #v-progress-section { display: none; }
@@ -83,7 +82,7 @@
     <button class="tab active" data-tab="image">画像</button>
     <button class="tab" data-tab="video">動画</button>
   </div>
-  <div id="status-pill">checking...</div>
+  <div id="env-line">checking...</div>
 </header>
 
 <main>
@@ -91,48 +90,56 @@
 <!-- ============ IMAGE TAB ============ -->
 <div id="panel-image" class="panel active">
   <section>
-    <div class="grid">
-      <label>入力画像</label>
-      <input type="text" id="img-path" readonly placeholder="（未選択）">
-      <button id="img-pick">選択...</button>
+    <div class="topgrid">
+      <div class="col-form">
+        <label>入力ソース</label>
+        <div class="input-with-btn">
+          <input type="text" id="img-path" readonly placeholder="（未選択）">
+          <button id="img-pick">選択...</button>
+        </div>
 
-      <label>モデル</label>
-      <select id="img-model"></select><span></span>
+        <label>モデル</label>
+        <select id="img-model"></select>
 
-      <label>下限カット</label>
-      <div class="slider-row">
-        <input type="range" id="img-alpha-low" min="0" max="255" value="0">
-        <span id="img-alpha-low-v">0</span>
+        <label>下限カット</label>
+        <div class="slider-row">
+          <input type="range" id="img-alpha-low" min="0" max="255" value="0">
+          <span class="val" id="img-alpha-low-v">0</span>
+          <span class="hint">↑ 半透明領域を切る／ ↓ 髪等の自然な半透明を残す</span>
+        </div>
+
+        <label>上限固定</label>
+        <div class="slider-row">
+          <input type="range" id="img-alpha-high" min="100" max="255" value="255">
+          <span class="val" id="img-alpha-high-v">255</span>
+          <span class="hint">↓ 縁の透けを止める／ 255 = 元のまま</span>
+        </div>
+
+        <label>エッジ拡縮</label>
+        <div class="slider-row">
+          <input type="range" id="img-edge-expand" min="-5" max="5" value="0">
+          <span class="val" id="img-edge-expand-v">0</span>
+          <span class="hint">− 縁を内側に削る／ + 縁を外側に広げる</span>
+        </div>
+
+        <label>フェザー</label>
+        <div class="slider-row">
+          <input type="range" id="img-feather" min="0" max="20" value="0">
+          <span class="val" id="img-feather-v">0</span>
+          <span class="hint">↑ 縁が柔らかく／ 0 = 元のまま</span>
+        </div>
       </div>
-      <span class="hint">↑ 半透明領域を切る／ ↓ 髪等の自然な半透明を残す</span>
 
-      <label>上限固定</label>
-      <div class="slider-row">
-        <input type="range" id="img-alpha-high" min="100" max="255" value="255">
-        <span id="img-alpha-high-v">255</span>
+      <div class="col-drop">
+        <div id="img-drop">
+          <p>ドロップ</p>
+          <input type="file" id="img-file" accept="image/*">
+        </div>
       </div>
-      <span class="hint">↓ 縁の透けを止める／ 255 = 元のまま</span>
-
-      <label>エッジ拡縮</label>
-      <div class="slider-row">
-        <input type="range" id="img-edge-expand" min="-5" max="5" value="0">
-        <span id="img-edge-expand-v">0</span>
-      </div>
-      <span class="hint">− 縁を内側に削る／ + 縁を外側に広げる</span>
-
-      <label>フェザー</label>
-      <div class="slider-row">
-        <input type="range" id="img-feather" min="0" max="20" value="0">
-        <span id="img-feather-v">0</span>
-      </div>
-      <span class="hint">↑ 縁が柔らかく／ 0 = 元のまま</span>
     </div>
+
     <div class="actions">
       <button id="img-defaults">Default に戻す</button>
-    </div>
-    <div id="img-drop" style="margin-top:14px;">
-      <p>または画像をここにドロップ</p>
-      <input type="file" id="img-file" accept="image/*">
     </div>
     <div class="msg" id="img-status"></div>
   </section>
@@ -159,78 +166,81 @@
 <!-- ============ VIDEO TAB ============ -->
 <div id="panel-video" class="panel">
   <section>
-    <h2>環境チェック</h2>
-    <div id="v-env-list"></div>
-  </section>
+    <div class="topgrid">
+      <div class="col-form">
+        <label>入力ソース</label>
+        <div class="input-with-btn">
+          <input type="text" id="v-input" readonly placeholder="（未選択）">
+          <button id="v-pick-input">選択...</button>
+        </div>
 
-  <section>
-    <h2>ジョブ</h2>
-    <div class="grid">
-      <label>入力動画</label>
-      <input type="text" id="v-input" readonly placeholder="（未選択）">
-      <button id="v-pick-input">選択...</button>
+        <label>出力先</label>
+        <div class="input-with-btn">
+          <input type="text" id="v-output" readonly placeholder="（未選択）">
+          <button id="v-pick-output">保存先...</button>
+        </div>
 
-      <label>出力先</label>
-      <input type="text" id="v-output" readonly placeholder="（未選択）">
-      <button id="v-pick-output">保存先...</button>
+        <label>モデル</label>
+        <select id="v-model"></select>
 
-      <label>モデル</label>
-      <select id="v-model"></select><span></span>
+        <label>出力形式</label>
+        <select id="v-format">
+          <option value="prores" selected>MOV ProRes 4444 (alpha)</option>
+          <option value="webm">WebM VP9 (alpha)</option>
+        </select>
 
-      <label>出力形式</label>
-      <select id="v-format">
-        <option value="prores" selected>MOV ProRes 4444 (alpha)</option>
-        <option value="webm">WebM VP9 (alpha)</option>
-      </select><span></span>
+        <label>downsample</label>
+        <select id="v-dsr">
+          <option value="">auto (推奨)</option>
+          <option value="1.0">1.0 (SD)</option>
+          <option value="0.5">0.5</option>
+          <option value="0.375">0.375 (720p)</option>
+          <option value="0.25">0.25 (1080p)</option>
+          <option value="0.125">0.125 (4K)</option>
+        </select>
 
-      <label>downsample</label>
-      <select id="v-dsr">
-        <option value="">auto (推奨)</option>
-        <option value="1.0">1.0 (SD)</option>
-        <option value="0.5">0.5</option>
-        <option value="0.375">0.375 (720p)</option>
-        <option value="0.25">0.25 (1080p)</option>
-        <option value="0.125">0.125 (4K)</option>
-      </select><span></span>
+        <label>下限カット</label>
+        <div class="slider-row">
+          <input type="range" id="v-alpha-low" min="0" max="255" value="0">
+          <span class="val" id="v-alpha-low-v">0</span>
+          <span class="hint">↑ 半透明領域を切る／ ↓ 髪等の自然な半透明を残す</span>
+        </div>
 
-      <label>下限カット</label>
-      <div class="slider-row">
-        <input type="range" id="v-alpha-low" min="0" max="255" value="0">
-        <span id="v-alpha-low-v">0</span>
+        <label>上限固定</label>
+        <div class="slider-row">
+          <input type="range" id="v-alpha-high" min="100" max="255" value="255">
+          <span class="val" id="v-alpha-high-v">255</span>
+          <span class="hint">↓ 縁の透けを止める／ 255 = 元のまま</span>
+        </div>
+
+        <label>エッジ拡縮</label>
+        <div class="slider-row">
+          <input type="range" id="v-edge-expand" min="-5" max="5" value="0">
+          <span class="val" id="v-edge-expand-v">0</span>
+          <span class="hint">− 縁を内側に削る／ + 縁を外側に広げる</span>
+        </div>
+
+        <label>フェザー</label>
+        <div class="slider-row">
+          <input type="range" id="v-feather" min="0" max="20" value="0">
+          <span class="val" id="v-feather-v">0</span>
+          <span class="hint">↑ 縁が柔らかく／ 0 = 元のまま</span>
+        </div>
+
+        <label>音声</label>
+        <label class="check-line"><input type="checkbox" id="v-mute"> 元動画の音声を含めない</label>
       </div>
-      <span class="hint">↑ 半透明領域を切る（背景の薄い残骸が消える）／ ↓ 髪等の自然な半透明を残す</span>
 
-      <label>上限固定</label>
-      <div class="slider-row">
-        <input type="range" id="v-alpha-high" min="100" max="255" value="255">
-        <span id="v-alpha-high-v">255</span>
+      <div class="col-drop">
+        <div id="v-drop">
+          <p>ドロップ</p>
+        </div>
       </div>
-      <span class="hint">↓ 縁の透けを止める（被写体の縁を完全不透明に固定）／ 255 = 元のまま</span>
-
-      <label>エッジ拡縮</label>
-      <div class="slider-row">
-        <input type="range" id="v-edge-expand" min="-5" max="5" value="0">
-        <span id="v-edge-expand-v">0</span>
-      </div>
-      <span class="hint">− 縁を内側に削る（背景の侵入対策）／ + 縁を外側に広げる（髪の毛救出）</span>
-
-      <label>フェザー</label>
-      <div class="slider-row">
-        <input type="range" id="v-feather" min="0" max="20" value="0">
-        <span id="v-feather-v">0</span>
-      </div>
-      <span class="hint">↑ 縁が柔らかく（ジャギ消し）／ 0 = 元のまま</span>
-
-      <label>音声</label>
-      <label class="check-line"><input type="checkbox" id="v-mute"> 元動画の音声を含めない</label>
-      <span></span>
     </div>
+
     <div class="actions">
       <button id="v-defaults">Default に戻す</button>
       <button class="primary" id="v-start" disabled>処理開始</button>
-    </div>
-    <div id="v-drop" style="margin-top:14px;">
-      <p>または動画をここにドロップ</p>
     </div>
     <div class="msg" id="v-msg"></div>
   </section>
@@ -321,21 +331,22 @@ function resetDefaults(defaults) {
   saveParams();
 }
 
-/* ============ Status pill (health) ============ */
-const pill = $('status-pill');
+/* ============ Header env pill ============ */
+const envLine = $('env-line');
 async function refreshHealth() {
   try {
-    const [imgR, vidR] = await Promise.all([
-      fetch('/api/image/health').then(r => r.json()),
-      fetch('/api/video/health').then(r => r.json()),
-    ]);
+    const vidR = await fetch('/api/video/health').then(r => r.json());
     refreshVideoEnv(vidR);
-    const ready = vidR.ready;  // image side has no missing-binaries case
-    pill.textContent = ready ? 'Ready' : 'Setup required';
-    pill.className = ready ? 'ok' : 'warn';
+    if (vidR.ready) {
+      envLine.textContent = 'Ready';
+      envLine.className = 'ok';
+    } else {
+      envLine.textContent = 'Setup required';
+      envLine.className = 'warn';
+    }
   } catch {
-    pill.textContent = 'Offline';
-    pill.className = 'warn';
+    envLine.textContent = 'Offline';
+    envLine.className = 'bad';
   }
 }
 
@@ -489,7 +500,7 @@ async function refreshHealth() {
 })();
 
 /* ============ Video tab ============ */
-const envList = $('v-env-list'), vModelSel = $('v-model');
+const vModelSel = $('v-model');
 const vStartBtn = $('v-start'), vCancelBtn = $('v-cancel');
 const vMsg = $('v-msg'), vMsg2 = $('v-msg2');
 const vProgressSec = $('v-progress-section');
@@ -513,18 +524,6 @@ function formatEta(sec) {
 
 let videoModelsLoaded = false;
 function refreshVideoEnv(h) {
-  envList.innerHTML = '';
-  const rows = [
-    { ok: h.ffmpeg, label: 'ffmpeg.exe', value: h.ffmpeg ? 'OK' : 'setup.bat を実行してください' },
-    { ok: h.ffprobe, label: 'ffprobe.exe', value: h.ffprobe ? 'OK' : 'setup.bat を実行してください' },
-    { ok: h.models.length > 0, label: 'RVM モデル', value: h.models.length ? h.models.map(m => `${m.name} (${m.size_mb}MB)`).join(', ') : 'setup.bat を実行してください' },
-  ];
-  rows.forEach(r => {
-    const div = document.createElement('div');
-    div.className = 'env-row ' + (r.ok ? 'ok' : 'bad');
-    div.innerHTML = `<div class="dot"></div><div class="label">${r.label}</div><div class="value">${r.value}</div>`;
-    envList.appendChild(div);
-  });
   if (!videoModelsLoaded && h.models.length) {
     vModelSel.innerHTML = '';
     h.models.forEach(m => {
