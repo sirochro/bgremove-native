@@ -9,8 +9,8 @@ from enum import Enum
 from typing import Dict, Optional
 
 import numpy as np
-from scipy.ndimage import gaussian_filter, grey_dilation, grey_erosion
 
+from app.alpha import clamp_params, is_default, postprocess_alpha
 from app.video.matting import RVMSession, suggest_downsample_ratio
 from app.video.pipeline import (
     iter_frames,
@@ -19,30 +19,6 @@ from app.video.pipeline import (
     open_webm_encoder,
     probe,
 )
-
-
-def postprocess_alpha(
-    pha: np.ndarray,
-    low: int,
-    high: int,
-    edge: int,
-    feather: int,
-) -> np.ndarray:
-    """Apply low cut → high boost → expand/contract → Gaussian feather."""
-    out = pha
-    if low > 0:
-        out = np.where(out < low, np.uint8(0), out)
-    if high < 255:
-        out = np.where(out > high, np.uint8(255), out)
-    if edge > 0:
-        size = 2 * edge + 1
-        out = grey_dilation(out, size=(size, size))
-    elif edge < 0:
-        size = -2 * edge + 1
-        out = grey_erosion(out, size=(size, size))
-    if feather > 0:
-        out = gaussian_filter(out, sigma=feather / 2.0)
-    return out.astype(np.uint8)
 
 
 class JobStatus(str, Enum):
@@ -162,11 +138,10 @@ class JobManager:
 
             assert encoder.stdin is not None
 
-            low = max(0, min(255, int(job.alpha_low)))
-            high = max(0, min(255, int(job.alpha_high)))
-            edge = max(-5, min(5, int(job.edge_expand)))
-            feather = max(0, min(20, int(job.feather)))
-            do_post = low > 0 or high < 255 or edge != 0 or feather > 0
+            low, high, edge, feather = clamp_params(
+                job.alpha_low, job.alpha_high, job.edge_expand, job.feather
+            )
+            do_post = not is_default(low, high, edge, feather)
 
             t0 = time.time()
             for idx, rgb in enumerate(iter_frames(decoder, W, H)):

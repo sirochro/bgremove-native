@@ -98,6 +98,37 @@
 
       <label>モデル</label>
       <select id="img-model"></select><span></span>
+
+      <label>下限カット</label>
+      <div class="slider-row">
+        <input type="range" id="img-alpha-low" min="0" max="255" value="0">
+        <span id="img-alpha-low-v">0</span>
+      </div>
+      <span class="hint">↑ 半透明領域を切る／ ↓ 髪等の自然な半透明を残す</span>
+
+      <label>上限固定</label>
+      <div class="slider-row">
+        <input type="range" id="img-alpha-high" min="100" max="255" value="255">
+        <span id="img-alpha-high-v">255</span>
+      </div>
+      <span class="hint">↓ 縁の透けを止める／ 255 = 元のまま</span>
+
+      <label>エッジ拡縮</label>
+      <div class="slider-row">
+        <input type="range" id="img-edge-expand" min="-5" max="5" value="0">
+        <span id="img-edge-expand-v">0</span>
+      </div>
+      <span class="hint">− 縁を内側に削る／ + 縁を外側に広げる</span>
+
+      <label>フェザー</label>
+      <div class="slider-row">
+        <input type="range" id="img-feather" min="0" max="20" value="0">
+        <span id="img-feather-v">0</span>
+      </div>
+      <span class="hint">↑ 縁が柔らかく／ 0 = 元のまま</span>
+    </div>
+    <div class="actions">
+      <button id="img-defaults">Default に戻す</button>
     </div>
     <div id="img-drop" style="margin-top:14px;">
       <p>または画像をここにドロップ</p>
@@ -195,6 +226,7 @@
       <span></span>
     </div>
     <div class="actions">
+      <button id="v-defaults">Default に戻す</button>
       <button class="primary" id="v-start" disabled>処理開始</button>
     </div>
     <div class="msg" id="v-msg"></div>
@@ -230,6 +262,47 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
+/* ============ Param persistence (localStorage) ============ */
+const STORAGE_KEY = 'bgremove-params-v1';
+
+const IMG_PARAM_IDS = ['img-alpha-low', 'img-alpha-high', 'img-edge-expand', 'img-feather', 'img-model'];
+const V_PARAM_IDS = ['v-alpha-low', 'v-alpha-high', 'v-edge-expand', 'v-feather', 'v-model', 'v-format', 'v-dsr', 'v-mute'];
+
+const IMG_DEFAULTS = { 'img-alpha-low': 0, 'img-alpha-high': 255, 'img-edge-expand': 0, 'img-feather': 0 };
+const V_DEFAULTS = { 'v-alpha-low': 0, 'v-alpha-high': 255, 'v-edge-expand': 0, 'v-feather': 0, 'v-format': 'prores', 'v-dsr': '', 'v-mute': false };
+
+function readEl(id) {
+  const el = $(id); if (!el) return null;
+  if (el.type === 'checkbox') return el.checked;
+  return el.value;
+}
+function writeEl(id, val) {
+  const el = $(id); if (!el || val == null) return;
+  if (el.type === 'checkbox') {
+    el.checked = !!val;
+  } else {
+    el.value = String(val);
+    if (el.type === 'range') el.dispatchEvent(new Event('input'));
+  }
+}
+function saveParams() {
+  const data = {};
+  [...IMG_PARAM_IDS, ...V_PARAM_IDS].forEach(id => { data[id] = readEl(id); });
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+}
+function loadParams() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    Object.entries(data).forEach(([id, val]) => writeEl(id, val));
+  } catch (e) { console.warn('loadParams failed:', e); }
+}
+function resetDefaults(defaults) {
+  Object.entries(defaults).forEach(([id, val]) => writeEl(id, val));
+  saveParams();
+}
+
 /* ============ Status pill (health) ============ */
 const pill = $('status-pill');
 async function refreshHealth() {
@@ -257,9 +330,16 @@ async function refreshHealth() {
   const orig = $('img-orig'), result = $('img-result'), dl = $('img-download');
   const saveMsg = $('img-save-msg');
 
-  let currentFile = null;       // File object (Blob)
+  let currentFile = null;
   let currentResultId = null;
   let processing = false;
+  let queued = false;
+  let processTimer = null;
+
+  bindSlider('img-alpha-low', 'img-alpha-low-v');
+  bindSlider('img-alpha-high', 'img-alpha-high-v');
+  bindSlider('img-edge-expand', 'img-edge-expand-v');
+  bindSlider('img-feather', 'img-feather-v');
 
   fetch('/api/image/models').then(r => r.json()).then(data => {
     data.models.forEach(m => {
@@ -268,6 +348,7 @@ async function refreshHealth() {
       if (m === data.default) opt.selected = true;
       modelSel.appendChild(opt);
     });
+    loadParams();
   });
 
   pickBtn.addEventListener('click', () => file.click());
@@ -280,8 +361,23 @@ async function refreshHealth() {
   });
   file.addEventListener('change', () => { if (file.files.length) handleFile(file.files[0]); });
 
+  // Model change → immediate reprocess
   modelSel.addEventListener('change', () => {
-    if (currentFile && !processing) processImage();
+    saveParams();
+    if (currentFile) requestProcess(0);
+  });
+
+  // Slider input → debounced reprocess (and persist immediately)
+  ['img-alpha-low', 'img-alpha-high', 'img-edge-expand', 'img-feather'].forEach(id => {
+    $(id).addEventListener('input', () => {
+      saveParams();
+      if (currentFile) requestProcess(300);
+    });
+  });
+
+  $('img-defaults').addEventListener('click', () => {
+    resetDefaults(IMG_DEFAULTS);
+    if (currentFile) requestProcess(0);
   });
 
   function handleFile(f) {
@@ -292,20 +388,34 @@ async function refreshHealth() {
     result.removeAttribute('src');
     dl.disabled = true;
     saveMsg.textContent = ''; saveMsg.className = 'msg';
-    processImage();
+    requestProcess(0);
+  }
+
+  function requestProcess(delay) {
+    if (processTimer) clearTimeout(processTimer);
+    processTimer = setTimeout(() => {
+      processTimer = null;
+      processImage();
+    }, delay);
   }
 
   async function processImage() {
-    if (!currentFile || processing) return;
+    if (!currentFile) return;
+    if (processing) { queued = true; return; }
     processing = true;
+    queued = false;
     currentResultId = null;
     dl.disabled = true;
-    status.textContent = 'Processing... (model: ' + modelSel.value + ')';
+    status.textContent = `Processing... (model: ${modelSel.value})`;
     status.className = 'msg';
 
     const fd = new FormData();
     fd.append('image', currentFile);
     fd.append('model', modelSel.value);
+    fd.append('alpha_low', $('img-alpha-low').value);
+    fd.append('alpha_high', $('img-alpha-high').value);
+    fd.append('edge_expand', $('img-edge-expand').value);
+    fd.append('feather', $('img-feather').value);
 
     const t0 = performance.now();
     try {
@@ -326,6 +436,7 @@ async function refreshHealth() {
       status.className = 'msg error';
     } finally {
       processing = false;
+      if (queued) processImage();
     }
   }
 
@@ -375,6 +486,7 @@ function formatEta(sec) {
   return h > 0 ? `${h}h ${m}m` : (m > 0 ? `${m}m ${s}s` : `${s}s`);
 }
 
+let videoModelsLoaded = false;
 function refreshVideoEnv(h) {
   envList.innerHTML = '';
   const rows = [
@@ -388,15 +500,18 @@ function refreshVideoEnv(h) {
     div.innerHTML = `<div class="dot"></div><div class="label">${r.label}</div><div class="value">${r.value}</div>`;
     envList.appendChild(div);
   });
-  vModelSel.innerHTML = '';
-  if (h.models.length) {
+  if (!videoModelsLoaded && h.models.length) {
+    vModelSel.innerHTML = '';
     h.models.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.name; opt.textContent = m.name;
       if (m.name.includes('resnet50')) opt.selected = true;
       vModelSel.appendChild(opt);
     });
-  } else {
+    videoModelsLoaded = true;
+    loadParams();  // apply persisted video selection after options exist
+  } else if (!h.models.length && !videoModelsLoaded) {
+    vModelSel.innerHTML = '';
     const opt = document.createElement('option');
     opt.textContent = '(no models)'; opt.disabled = true;
     vModelSel.appendChild(opt);
@@ -418,6 +533,17 @@ bindSlider('v-alpha-low', 'v-alpha-low-v');
 bindSlider('v-alpha-high', 'v-alpha-high-v');
 bindSlider('v-edge-expand', 'v-edge-expand-v');
 bindSlider('v-feather', 'v-feather-v');
+
+// Persist video params on any change
+V_PARAM_IDS.forEach(id => {
+  const el = $(id); if (!el) return;
+  const ev = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
+  el.addEventListener(ev, saveParams);
+});
+
+$('v-defaults').addEventListener('click', () => {
+  resetDefaults(V_DEFAULTS);
+});
 
 $('v-pick-input').addEventListener('click', async () => {
   if (!window.pywebview || !window.pywebview.api) { vMsg.textContent = 'pywebview API unavailable'; return; }
