@@ -367,14 +367,24 @@ function writeEl(id, val) {
   const el = $(id); if (!el || val == null) return;
   if (el.type === 'checkbox') {
     el.checked = !!val;
-  } else {
-    el.value = String(val);
-    if (el.type === 'range') el.dispatchEvent(new Event('input'));
+    return;
   }
+  if (el.tagName === 'SELECT') {
+    // Skip if the saved value isn't currently an option — otherwise we'd
+    // clear the default selection (e.g. v-model gets persisted as "" when
+    // saveParams fires before video/health populates the dropdown).
+    if (!Array.from(el.options).some(o => o.value === String(val))) return;
+  }
+  el.value = String(val);
+  if (el.type === 'range') el.dispatchEvent(new Event('input'));
 }
 function saveParams() {
   if (!_stateReady) return;
   [...IMG_PARAM_IDS, ...V_PARAM_IDS].forEach(id => {
+    const el = $(id); if (!el) return;
+    // SELECTs with no options yet would read as "" and clobber a previously
+    // saved selection. Skip until the dropdown is populated.
+    if (el.tagName === 'SELECT' && el.options.length === 0) return;
     const v = readEl(id);
     if (v !== null) _state[id] = v;
   });
