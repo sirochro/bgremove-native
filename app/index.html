@@ -84,14 +84,16 @@
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   .actions { margin-top: 28px; display: flex; gap: 8px; justify-content: center; }
 
-  /* Message line — also carries the in-flight progress bar + stats. */
-  .msg { margin-top: 10px; font-size: 13px; color: #888; min-height: 18px; display: flex; align-items: center; gap: 10px; }
+  /* Message line — also carries the in-flight progress bar + stats.
+     The bar fills the whole row width while a job is active; the stats
+     text rides on top of it. Outside of jobs, only the text is shown. */
+  .msg { position: relative; margin-top: 10px; min-height: 26px; padding: 4px 10px; font-size: 13px; color: #888; border-radius: 4px; display: flex; align-items: center; }
   .msg.error { color: #cf6f6f; }
   .msg.success { color: #6fcf6f; }
-  .msg-pbar { display: none; width: 120px; height: 8px; background: #1a1a1a; border-radius: 4px; overflow: hidden; border: 1px solid #333; flex-shrink: 0; }
+  .msg-pbar { display: none; position: absolute; inset: 0; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; overflow: hidden; }
   .msg-pbar.show { display: block; }
   .msg-pbar > span { display: block; height: 100%; background: linear-gradient(90deg, #3a7abe, #5aa0d8); transition: width 0.2s; width: 0; }
-  .msg-text { font-variant-numeric: tabular-nums; }
+  .msg-text { position: relative; z-index: 1; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
