@@ -10,9 +10,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from app.path_validation import validate_input_path, validate_output_path
 from app.video.jobs import Job, JobManager, JobStatus
 from app.video.pipeline import FFMPEG, FFPROBE
 from app.video.preview import preview_frame
@@ -63,11 +64,11 @@ def health() -> dict:
 class PreviewRequest(BaseModel):
     input_path: str
     model: str
-    alpha_low: int = 0
-    alpha_high: int = 255
-    edge_expand: int = 0
-    feather: int = 0
-    downsample_ratio: Optional[float] = None
+    alpha_low: int = Field(0, ge=0, le=255)
+    alpha_high: int = Field(255, ge=0, le=255)
+    edge_expand: int = Field(0, ge=-5, le=5)
+    feather: int = Field(0, ge=0, le=20)
+    downsample_ratio: Optional[float] = Field(None, gt=0.0, le=1.0)
 
 
 @router.post("/preview")
@@ -75,11 +76,10 @@ def create_preview(req: PreviewRequest) -> dict:
     models = {m["name"]: m["path"] for m in list_models()}
     if req.model not in models:
         raise HTTPException(400, f"Unknown model: {req.model}")
-    if not Path(req.input_path).exists():
-        raise HTTPException(400, f"Input file not found: {req.input_path}")
+    src = validate_input_path(req.input_path, "video")
     try:
         orig, proc, info = preview_frame(
-            req.input_path,
+            str(src),
             models[req.model],
             alpha_low=req.alpha_low,
             alpha_high=req.alpha_high,
@@ -111,11 +111,11 @@ class JobRequest(BaseModel):
     output_path: str
     model: str
     output_format: str = "prores"
-    downsample_ratio: Optional[float] = None
-    alpha_low: int = 0
-    alpha_high: int = 255
-    edge_expand: int = 0
-    feather: int = 0
+    downsample_ratio: Optional[float] = Field(None, gt=0.0, le=1.0)
+    alpha_low: int = Field(0, ge=0, le=255)
+    alpha_high: int = Field(255, ge=0, le=255)
+    edge_expand: int = Field(0, ge=-5, le=5)
+    feather: int = Field(0, ge=0, le=20)
     mute: bool = False
 
 
@@ -126,12 +126,18 @@ def create_job(req: JobRequest) -> dict:
         raise HTTPException(400, f"Unknown model: {req.model}")
     if req.output_format not in ("prores", "webm"):
         raise HTTPException(400, f"Unknown output_format: {req.output_format}")
-    if not Path(req.input_path).exists():
-        raise HTTPException(400, f"Input file not found: {req.input_path}")
+
+    src = validate_input_path(req.input_path, "video")
+    out = validate_output_path(req.output_path, "video")
+    # The output extension must agree with the chosen encoder.
+    if req.output_format == "prores" and out.suffix.lower() != ".mov":
+        raise HTTPException(400, "output_format=prores requires a .mov output path")
+    if req.output_format == "webm" and out.suffix.lower() != ".webm":
+        raise HTTPException(400, "output_format=webm requires a .webm output path")
 
     job = _manager.submit(
-        input_path=req.input_path,
-        output_path=req.output_path,
+        input_path=str(src),
+        output_path=str(out),
         model_path=models[req.model],
         output_format=req.output_format,
         downsample_ratio=req.downsample_ratio,

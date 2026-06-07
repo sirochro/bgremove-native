@@ -10,7 +10,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from rembg import remove
 
@@ -21,6 +21,7 @@ from app.image.session import (
     get_session,
     loaded_models,
 )
+from app.path_validation import validate_input_path, validate_output_path
 
 router = APIRouter()
 
@@ -78,9 +79,7 @@ def list_models() -> dict:
 @router.get("/source")
 def get_source(path: str) -> Response:
     """Serve a local image file for preview (by full path)."""
-    p = Path(path)
-    if not p.exists() or not p.is_file():
-        raise HTTPException(404, "Source not found")
+    p = validate_input_path(path, "image")
     mime = _MIME_BY_EXT.get(p.suffix.lower(), "application/octet-stream")
     return Response(content=p.read_bytes(), media_type=mime)
 
@@ -88,17 +87,15 @@ def get_source(path: str) -> Response:
 class RemoveRequest(BaseModel):
     input_path: str
     model: str = DEFAULT_MODEL
-    alpha_low: int = 0
-    alpha_high: int = 255
-    edge_expand: int = 0
-    feather: int = 0
+    alpha_low: int = Field(0, ge=0, le=255)
+    alpha_high: int = Field(255, ge=0, le=255)
+    edge_expand: int = Field(0, ge=-5, le=5)
+    feather: int = Field(0, ge=0, le=20)
 
 
 @router.post("/remove")
 def remove_bg(req: RemoveRequest) -> dict:
-    src = Path(req.input_path)
-    if not src.exists():
-        raise HTTPException(400, f"Input not found: {req.input_path}")
+    src = validate_input_path(req.input_path, "image")
     session = get_session(req.model)
     raw = src.read_bytes()
     try:
@@ -133,7 +130,6 @@ def save_result(req: SaveRequest) -> dict:
     data = _results.get(req.result_id)
     if data is None:
         raise HTTPException(404, "Result not found")
-    out = Path(req.output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
+    out = validate_output_path(req.output_path, "image")
     out.write_bytes(data)
     return {"ok": True, "bytes": len(data)}
