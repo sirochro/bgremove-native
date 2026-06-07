@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import queue
-import subprocess
 import threading
 import time
 import uuid
@@ -112,6 +111,7 @@ class JobManager:
     def _run(self, job: Job) -> None:
         decoder = None
         encoder = None
+        writer_t = None
         try:
             job.status = JobStatus.RUNNING
             job.started_at = time.time()
@@ -149,18 +149,25 @@ class JobManager:
             # Background writer thread: lets inference overlap with the
             # ffmpeg write + encode time per frame instead of strictly
             # serializing infer → tobytes → write → next infer.
-            encode_q: "queue.Queue[Optional[bytes]]" = queue.Queue(maxsize=4)
+            # maxsize=2 is enough for steady-state overlap; bigger queues
+            # hold more RGBA per slot (33MB at 4K) and stretch cancel
+            # latency without adding throughput.
+            encode_q: "queue.Queue[Optional[bytes]]" = queue.Queue(maxsize=2)
             writer_error: list[BaseException] = []
 
             def _writer() -> None:
                 try:
-                    while True:
-                        item = encode_q.get()
+                    while not job._cancel.is_set():
+                        try:
+                            item = encode_q.get(timeout=0.2)
+                        except queue.Empty:
+                            continue
                         if item is None:
                             return
-                        encoder.stdin.write(item)
-                except (BrokenPipeError, ValueError):
-                    return
+                        try:
+                            encoder.stdin.write(item)
+                        except (BrokenPipeError, ValueError):
+                            return
                 except BaseException as exc:  # noqa: BLE001
                     writer_error.append(exc)
 
@@ -178,7 +185,20 @@ class JobManager:
                 if do_post:
                     pha = postprocess_alpha(pha, low, high, edge, feather)
                 rgba = np.dstack([fgr, pha])
-                encode_q.put(rgba.tobytes())  # blocks for backpressure
+                data = rgba.tobytes()
+
+                # Cancel-polling put: a slow encoder must not stall cancel.
+                while True:
+                    if job._cancel.is_set():
+                        canceled = True
+                        break
+                    try:
+                        encode_q.put(data, timeout=0.2)
+                        break
+                    except queue.Full:
+                        continue
+                if canceled:
+                    break
 
                 job.n_frames_done = idx + 1
                 if job.n_frames_total > 0:
@@ -190,22 +210,20 @@ class JobManager:
                     if job.fps_processed > 0:
                         job.eta_seconds = remaining / job.fps_processed
 
-            # Drain — signal writer to stop, then wait for it to flush.
-            encode_q.put(None)
-            writer_t.join(timeout=60)
-            if writer_error:
-                raise writer_error[0]
-
-            # Always close stdin so the encoder finalizes the container (writes
-            # moov atom for MOV, cues for WebM) — produces a playable file even
-            # on early termination if we want one.
-            encoder.stdin.close()
-            encoder.wait(timeout=900)
-            decoder.wait(timeout=60)
-
             if canceled:
+                # Skip graceful drain — the file is going to be discarded
+                # anyway. finally will kill the encoder/decoder and the
+                # writer exits via cancel poll / BrokenPipeError.
                 job.status = JobStatus.CANCELED
             else:
+                # Normal completion: drain writer, finalize encoder.
+                encode_q.put(None)
+                writer_t.join(timeout=60)
+                if writer_error:
+                    raise writer_error[0]
+                encoder.stdin.close()
+                encoder.wait(timeout=900)
+                decoder.wait(timeout=60)
                 job.progress = 1.0
                 job.status = JobStatus.DONE
             job.finished_at = time.time()
@@ -214,23 +232,24 @@ class JobManager:
             job.status = JobStatus.FAILED
             job.finished_at = time.time()
         finally:
-            # Encoder: try clean shutdown first; kill only on stuck.
+            # Encoder: graceful close on normal flow (already done above),
+            # kill on cancel/exception so the writer's pending write fails
+            # promptly with BrokenPipeError.
             if encoder is not None and encoder.poll() is None:
                 try:
-                    if encoder.stdin and not encoder.stdin.closed:
-                        encoder.stdin.close()
-                    encoder.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    try:
-                        encoder.kill()
-                    except Exception:
-                        pass
+                    encoder.kill()
                 except Exception:
-                    try:
-                        encoder.kill()
-                    except Exception:
-                        pass
-            # Decoder is a producer; just stop it.
+                    pass
+                try:
+                    encoder.wait(timeout=5)
+                except Exception:
+                    pass
+            # Writer thread: encoder is gone, give the writer a moment to
+            # notice and exit. Cancel poll also helps it bail.
+            if writer_t is not None and writer_t.is_alive():
+                writer_t.join(timeout=2)
+            # Decoder is still reading the input file; on early exit
+            # ffmpeg blocks on its stdout buffer until we kill it.
             if decoder is not None and decoder.poll() is None:
                 try:
                     decoder.kill()
