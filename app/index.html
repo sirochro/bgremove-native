@@ -303,9 +303,6 @@
       <div class="stat"><div class="k">FPS</div><div class="v" id="v-s-fps">—</div></div>
       <div class="stat"><div class="k">ETA</div><div class="v" id="v-s-eta">—</div></div>
     </div>
-    <div class="actions">
-      <button class="danger" id="v-cancel">キャンセル</button>
-    </div>
     <div class="msg" id="v-msg2"></div>
   </section>
 </div>
@@ -615,7 +612,7 @@ async function refreshHealth() {
 
 /* ============ Video tab ============ */
 const vModelSel = $('v-model');
-const vStartBtn = $('v-start'), vCancelBtn = $('v-cancel');
+const vStartBtn = $('v-start');
 const vMsg = $('v-msg'), vMsg2 = $('v-msg2');
 const vProgressSec = $('v-progress-section');
 const vPbarFill = $('v-pbar-fill');
@@ -658,7 +655,17 @@ function refreshVideoEnv(h) {
 }
 
 function updateVStartEnabled() {
-  vStartBtn.disabled = !(vInPath.value && vModelSel.value && !vCurrentJobId);
+  if (vCurrentJobId) {
+    vStartBtn.textContent = 'キャンセル';
+    vStartBtn.classList.remove('primary');
+    vStartBtn.classList.add('danger');
+    vStartBtn.disabled = false;
+  } else {
+    vStartBtn.textContent = '処理開始';
+    vStartBtn.classList.remove('danger');
+    vStartBtn.classList.add('primary');
+    vStartBtn.disabled = !(vInPath.value && vModelSel.value);
+  }
 }
 
 function bindSlider(id, valueId) {
@@ -785,6 +792,10 @@ $('v-format').addEventListener('change', () => {
 });
 
 vStartBtn.addEventListener('click', async () => {
+  if (vCurrentJobId) {
+    await fetch(`/api/video/jobs/${vCurrentJobId}/cancel`, { method: 'POST' });
+    return;
+  }
   vMsg.textContent = ''; vMsg.className = 'msg';
   if (!vOutPath.value) {
     if (!window.pywebview || !window.pywebview.api) {
@@ -827,7 +838,7 @@ vStartBtn.addEventListener('click', async () => {
   }
   const { job_id } = await r.json();
   vCurrentJobId = job_id;
-  vStartBtn.disabled = true;
+  updateVStartEnabled();
   vProgressSec.style.display = 'block';
   vMsg2.textContent = ''; vMsg2.className = 'msg';
   vPbarFill.style.width = '0%';
@@ -859,11 +870,6 @@ vStartBtn.addEventListener('click', async () => {
     }
   };
   vCurrentES.onerror = () => { /* auto-reconnect */ };
-});
-
-vCancelBtn.addEventListener('click', async () => {
-  if (!vCurrentJobId) return;
-  await fetch(`/api/video/jobs/${vCurrentJobId}/cancel`, { method: 'POST' });
 });
 
 function finishVideoJob() {
