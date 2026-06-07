@@ -82,7 +82,7 @@
   button.danger { background: #5a2a2a; border-color: #6a3a3a; }
   button.danger:hover:not(:disabled) { background: #7a3a3a; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .actions { margin-top: 28px; display: flex; gap: 8px; justify-content: center; }
+  .actions { margin-top: 28px; margin-bottom: 14px; display: flex; gap: 8px; justify-content: center; }
 
   /* Message line — also carries the in-flight progress bar + stats.
      Stacked layout: full-width bar on top, stats text on the line
@@ -94,6 +94,7 @@
   .msg-pbar.show { display: block; }
   .msg-pbar > span { display: block; height: 100%; background: linear-gradient(90deg, #3a7abe, #5aa0d8); transition: width 0.2s; width: 0; }
   .msg-text { font-variant-numeric: tabular-nums; }
+  .msg:has(.msg-pbar.show) .msg-text { text-align: right; }
 </style>
 </head>
 <body>
