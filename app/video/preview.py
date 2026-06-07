@@ -35,7 +35,10 @@ def extract_first_frame(video_path: str, width: int, height: int) -> np.ndarray:
         "-pix_fmt", "rgb24",
         "-",
     ]
-    out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL)
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=30)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"ffmpeg timed out extracting first frame from {video_path}") from exc
     expected = width * height * 3
     if len(out) < expected:
         raise RuntimeError(

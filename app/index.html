@@ -47,7 +47,10 @@
   .col-drop > div { flex: 1; min-height: 200px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px dashed #444; border-radius: 8px; transition: all 0.15s; color: #888; text-align: center; padding: 24px; font-size: 13px; }
   .col-drop > div p { margin: 0; }
   .col-drop > div.over { border-color: #4a9eff; background: #0f1f30; color: #4a9eff; }
+  .col-drop > div.locked { opacity: 0.4; pointer-events: none; }
   .col-drop > div input { display: none; }
+  .col-form input:disabled, .col-form select:disabled, .col-form input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
+  .col-form .check-line:has(input:disabled) { opacity: 0.4; }
 
   /* Preview panes */
   .img-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -437,8 +440,6 @@ async function refreshHealth() {
   const modelSel = $('img-model');
   const panes = $('img-panes');
   const orig = $('img-orig'), result = $('img-result'), dl = $('img-download');
-  // All image-side messages collapse into #img-status so users only watch one spot.
-  const saveMsg = status;
 
   let currentResultId = null;
   let processing = false;
@@ -498,7 +499,6 @@ async function refreshHealth() {
     result.removeAttribute('src');
     dl.disabled = true;
     status.textContent = ''; status.className = 'msg';
-    saveMsg.textContent = ''; saveMsg.className = 'msg';
   });
 
   function setImageInput(path) {
@@ -507,7 +507,7 @@ async function refreshHealth() {
     orig.src = `/api/image/source?path=${encodeURIComponent(path)}&ts=${Date.now()}`;
     result.removeAttribute('src');
     dl.disabled = true;
-    saveMsg.textContent = ''; saveMsg.className = 'msg';
+    status.textContent = ''; status.className = 'msg';
     requestProcess(0);
   }
 
@@ -572,11 +572,11 @@ async function refreshHealth() {
 
   dl.addEventListener('click', async () => {
     if (!currentResultId) return;
-    saveMsg.textContent = '';
-    saveMsg.className = 'msg';
+    status.textContent = '';
+    status.className = 'msg';
     if (!window.pywebview || !window.pywebview.api) {
-      saveMsg.textContent = 'pywebview API unavailable';
-      saveMsg.className = 'msg error';
+      status.textContent = 'pywebview API unavailable';
+      status.className = 'msg error';
       return;
     }
     const suggested = pathBase(pathInput.value) + '_removed.png';
@@ -589,12 +589,12 @@ async function refreshHealth() {
     });
     if (r.ok) {
       const j = await r.json();
-      saveMsg.textContent = `保存しました: ${path} (${(j.bytes / 1024).toFixed(1)} KB)`;
-      saveMsg.className = 'msg success';
+      status.textContent = `保存しました: ${path} (${(j.bytes / 1024).toFixed(1)} KB)`;
+      status.className = 'msg success';
     } else {
       const err = await r.json().catch(() => ({ detail: r.statusText }));
-      saveMsg.textContent = 'Save failed: ' + (err.detail || r.statusText);
-      saveMsg.className = 'msg error';
+      status.textContent = 'Save failed: ' + (err.detail || r.statusText);
+      status.className = 'msg error';
     }
   });
 
@@ -604,15 +604,13 @@ async function refreshHealth() {
 /* ============ Video tab ============ */
 const vModelSel = $('v-model');
 const vStartBtn = $('v-start');
-// All video-side messages collapse into #v-msg so users only watch one spot.
-const vMsg = $('v-msg'), vMsg2 = vMsg;
+const vMsg = $('v-msg');
 const vProgressSec = $('v-progress-section');
 const vPbarFill = $('v-pbar-fill');
 const vInPath = $('v-input'), vOutPath = $('v-output');
 const vDrop = $('v-drop');
 const vPreviewSec = $('v-preview-section');
 const vPrevOrig = $('v-prev-orig'), vPrevResult = $('v-prev-result');
-const vPrevMsg = vMsg;
 let vCurrentJobId = null, vCurrentES = null;
 let vPreviewTimer = null;
 let vPreviewing = false;
@@ -646,8 +644,16 @@ function refreshVideoEnv(h) {
   updateVStartEnabled();
 }
 
+// Controls disabled while a job is running (everything except start/cancel).
+const V_LOCK_IDS = [
+  'v-alpha-low', 'v-alpha-high', 'v-edge-expand', 'v-feather',
+  'v-model', 'v-format', 'v-dsr', 'v-mute',
+  'v-pick-output', 'v-defaults',
+];
+
 function updateVStartEnabled() {
-  if (vCurrentJobId) {
+  const busy = !!vCurrentJobId;
+  if (busy) {
     vStartBtn.textContent = 'キャンセル';
     vStartBtn.classList.remove('primary');
     vStartBtn.classList.add('danger');
@@ -658,6 +664,8 @@ function updateVStartEnabled() {
     vStartBtn.classList.add('primary');
     vStartBtn.disabled = !(vInPath.value && vModelSel.value);
   }
+  V_LOCK_IDS.forEach(id => { const el = $(id); if (el) el.disabled = busy; });
+  vDrop.classList.toggle('locked', busy);
 }
 
 function bindSlider(id, valueId) {
@@ -685,7 +693,6 @@ $('v-defaults').addEventListener('click', () => {
   vPrevOrig.removeAttribute('src');
   vPrevResult.removeAttribute('src');
   vMsg.textContent = ''; vMsg.className = 'msg';
-  vPrevMsg.textContent = ''; vPrevMsg.className = 'msg';
   updateVStartEnabled();
 });
 
@@ -717,10 +724,11 @@ function requestVideoPreview(delay) {
 
 async function previewVideo() {
   if (!vInPath.value || !vModelSel.value) return;
+  if (vCurrentJobId) return;  // don't fight the job for the GPU/session
   if (vPreviewing) { vPreviewQueued = true; return; }
   vPreviewing = true; vPreviewQueued = false;
   vPreviewSec.style.display = 'block';
-  vPrevMsg.textContent = 'Processing preview...'; vPrevMsg.className = 'msg';
+  vMsg.textContent = 'Processing preview...'; vMsg.className = 'msg';
   const body = {
     input_path: vInPath.value,
     model: vModelSel.value,
@@ -747,11 +755,11 @@ async function previewVideo() {
     vPrevResult.src = `/api/video/preview/${j.proc_id}?ts=${Date.now()}`;
     const dt = ((performance.now() - t0) / 1000).toFixed(2);
     const info = j.info;
-    vPrevMsg.textContent = `${info.width}x${info.height} ${info.fps.toFixed(2)}fps ${info.n_frames.toLocaleString()}f / preview ${dt}s`;
-    vPrevMsg.className = 'msg success';
+    vMsg.textContent = `${info.width}x${info.height} ${info.fps.toFixed(2)}fps ${info.n_frames.toLocaleString()}f / preview ${dt}s`;
+    vMsg.className = 'msg success';
   } catch (e) {
-    vPrevMsg.textContent = 'Preview error: ' + e.message;
-    vPrevMsg.className = 'msg error';
+    vMsg.textContent = 'Preview error: ' + e.message;
+    vMsg.className = 'msg error';
   } finally {
     vPreviewing = false;
     if (vPreviewQueued) previewVideo();
@@ -832,7 +840,7 @@ vStartBtn.addEventListener('click', async () => {
   vCurrentJobId = job_id;
   updateVStartEnabled();
   vProgressSec.style.display = 'block';
-  vMsg2.textContent = ''; vMsg2.className = 'msg';
+  vMsg.textContent = ''; vMsg.className = 'msg';
   vPbarFill.style.width = '0%';
   $('v-s-pct').textContent = '0%';
   $('v-s-frames').textContent = '0 / ?';
@@ -849,15 +857,15 @@ vStartBtn.addEventListener('click', async () => {
     $('v-s-fps').textContent = j.fps ? j.fps.toFixed(1) : '—';
     $('v-s-eta').textContent = formatEta(j.eta_seconds);
     if (j.status === 'done') {
-      vMsg2.textContent = `完了 (provider: ${j.provider || 'unknown'})`;
-      vMsg2.className = 'msg success';
+      vMsg.textContent = `完了 (provider: ${j.provider || 'unknown'})`;
+      vMsg.className = 'msg success';
       finishVideoJob();
     } else if (j.status === 'failed') {
-      vMsg2.textContent = 'Error: ' + (j.error || 'unknown');
-      vMsg2.className = 'msg error';
+      vMsg.textContent = 'Error: ' + (j.error || 'unknown');
+      vMsg.className = 'msg error';
       finishVideoJob();
     } else if (j.status === 'canceled') {
-      vMsg2.textContent = 'キャンセルされました';
+      vMsg.textContent = 'キャンセルされました';
       finishVideoJob();
     }
   };

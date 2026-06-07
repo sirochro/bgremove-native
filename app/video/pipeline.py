@@ -38,9 +38,15 @@ def probe(path: str) -> dict:
         "-of", "json",
         path,
     ]
-    out = subprocess.check_output(cmd, text=True)
+    try:
+        out = subprocess.check_output(cmd, text=True, timeout=30)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"ffprobe timed out on {path}") from exc
     data = json.loads(out)
-    s = data["streams"][0]
+    streams = data.get("streams") or []
+    if not streams:
+        raise RuntimeError(f"No video stream found in {path}")
+    s = streams[0]
     fmt = data.get("format", {})
 
     num, denom = s["avg_frame_rate"].split("/")
@@ -79,14 +85,16 @@ def open_decoder(path: str) -> subprocess.Popen:
     )
 
 
-def open_prores_encoder(
+def _open_rgba_encoder(
     out_path: str,
     width: int,
     height: int,
     fps: float,
-    audio_source: str | None = None,
+    audio_source: str | None,
+    audio_args: list[str],
+    video_args: list[str],
 ) -> subprocess.Popen:
-    """Encode raw RGBA from stdin → MOV ProRes 4444 with alpha (+ AAC audio)."""
+    """Common rawvideo-RGBA stdin → muxed output encoder pipeline."""
     ensure_tools()
     cmd: list[str] = [
         str(FFMPEG),
@@ -100,25 +108,32 @@ def open_prores_encoder(
         "-i", "-",
     ]
     if audio_source:
-        cmd += [
-            "-i", audio_source,
-            "-map", "0:v:0",
-            "-map", "1:a?",
-            "-c:a", "aac",
-            "-b:a", "192k",
-        ]
+        cmd += ["-i", audio_source, "-map", "0:v:0", "-map", "1:a?"] + audio_args
     else:
         cmd += ["-map", "0:v:0"]
-    cmd += [
-        "-c:v", "prores_ks",
-        "-profile:v", "4444",
-        "-pix_fmt", "yuva444p10le",
-        "-vendor", "apl0",
-        "-shortest",
-        out_path,
-    ]
+    cmd += video_args + ["-shortest", out_path]
     return subprocess.Popen(
         cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0
+    )
+
+
+def open_prores_encoder(
+    out_path: str,
+    width: int,
+    height: int,
+    fps: float,
+    audio_source: str | None = None,
+) -> subprocess.Popen:
+    """Encode raw RGBA from stdin → MOV ProRes 4444 with alpha (+ AAC audio)."""
+    return _open_rgba_encoder(
+        out_path, width, height, fps, audio_source,
+        audio_args=["-c:a", "aac", "-b:a", "192k"],
+        video_args=[
+            "-c:v", "prores_ks",
+            "-profile:v", "4444",
+            "-pix_fmt", "yuva444p10le",
+            "-vendor", "apl0",
+        ],
     )
 
 
@@ -130,38 +145,15 @@ def open_webm_encoder(
     audio_source: str | None = None,
 ) -> subprocess.Popen:
     """Encode raw RGBA from stdin → WebM VP9 with alpha (+ Opus audio)."""
-    ensure_tools()
-    cmd: list[str] = [
-        str(FFMPEG),
-        "-hide_banner",
-        "-loglevel", "error",
-        "-y",
-        "-f", "rawvideo",
-        "-pix_fmt", "rgba",
-        "-s", f"{width}x{height}",
-        "-r", f"{fps:.6f}",
-        "-i", "-",
-    ]
-    if audio_source:
-        cmd += [
-            "-i", audio_source,
-            "-map", "0:v:0",
-            "-map", "1:a?",
-            "-c:a", "libopus",
-            "-b:a", "128k",
-        ]
-    else:
-        cmd += ["-map", "0:v:0"]
-    cmd += [
-        "-c:v", "libvpx-vp9",
-        "-pix_fmt", "yuva420p",
-        "-auto-alt-ref", "0",
-        "-b:v", "8M",
-        "-shortest",
-        out_path,
-    ]
-    return subprocess.Popen(
-        cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0
+    return _open_rgba_encoder(
+        out_path, width, height, fps, audio_source,
+        audio_args=["-c:a", "libopus", "-b:a", "128k"],
+        video_args=[
+            "-c:v", "libvpx-vp9",
+            "-pix_fmt", "yuva420p",
+            "-auto-alt-ref", "0",
+            "-b:v", "8M",
+        ],
     )
 
 

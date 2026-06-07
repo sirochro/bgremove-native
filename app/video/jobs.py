@@ -1,11 +1,13 @@
 """Video matting jobs: decode → RVM infer → alpha post-process → encode."""
 from __future__ import annotations
 
+import subprocess
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Dict, Optional
 
 import numpy as np
@@ -144,10 +146,11 @@ class JobManager:
             do_post = not is_default(low, high, edge, feather)
 
             t0 = time.time()
+            canceled = False
             for idx, rgb in enumerate(iter_frames(decoder, W, H)):
                 if job._cancel.is_set():
-                    job.status = JobStatus.CANCELED
-                    return
+                    canceled = True
+                    break
 
                 fgr, pha = session.infer(rgb, dsr)
                 if do_post:
@@ -165,21 +168,51 @@ class JobManager:
                     if job.fps_processed > 0:
                         job.eta_seconds = remaining / job.fps_processed
 
+            # Always close stdin so the encoder finalizes the container (writes
+            # moov atom for MOV, cues for WebM) — produces a playable file even
+            # on early termination if we want one.
             encoder.stdin.close()
             encoder.wait(timeout=900)
             decoder.wait(timeout=60)
 
-            job.progress = 1.0
-            job.status = JobStatus.DONE
+            if canceled:
+                job.status = JobStatus.CANCELED
+            else:
+                job.progress = 1.0
+                job.status = JobStatus.DONE
             job.finished_at = time.time()
         except Exception as exc:
             job.error = f"{type(exc).__name__}: {exc}"
             job.status = JobStatus.FAILED
             job.finished_at = time.time()
         finally:
-            for proc in (decoder, encoder):
-                if proc is not None and proc.poll() is None:
+            # Encoder: try clean shutdown first; kill only on stuck.
+            if encoder is not None and encoder.poll() is None:
+                try:
+                    if encoder.stdin and not encoder.stdin.closed:
+                        encoder.stdin.close()
+                    encoder.wait(timeout=5)
+                except subprocess.TimeoutExpired:
                     try:
-                        proc.kill()
+                        encoder.kill()
                     except Exception:
                         pass
+                except Exception:
+                    try:
+                        encoder.kill()
+                    except Exception:
+                        pass
+            # Decoder is a producer; just stop it.
+            if decoder is not None and decoder.poll() is None:
+                try:
+                    decoder.kill()
+                except Exception:
+                    pass
+            # Drop a half-written file when the job didn't complete normally.
+            # Cancelled jobs may still have wanted the partial output, but the
+            # safer default is to discard — users can re-run to keep results.
+            if job.status in (JobStatus.CANCELED, JobStatus.FAILED):
+                try:
+                    Path(job.output_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
