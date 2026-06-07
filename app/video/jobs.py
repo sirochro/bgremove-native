@@ -2,18 +2,19 @@
 from __future__ import annotations
 
 import queue
+import subprocess
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 
 from app.alpha import clamp_params, is_default, postprocess_alpha
-from app.video.matting import suggest_downsample_ratio
+from app.video.matting import RVMSession, suggest_downsample_ratio
 from app.video.pipeline import (
     iter_frames,
     open_decoder,
@@ -61,6 +62,32 @@ class Job:
     finished_at: float = 0.0
 
     _cancel: threading.Event = field(default_factory=threading.Event, repr=False)
+
+
+@dataclass
+class _RunCtx:
+    """All mutable handles owned by one _run invocation.
+
+    Threaded through setup → loop → finalize → cleanup so that the
+    cleanup pass can find every subprocess and thread to tear down,
+    regardless of where in the pipeline an exit happened.
+    """
+
+    decoder: Optional[subprocess.Popen] = None
+    encoder: Optional[subprocess.Popen] = None
+    writer_t: Optional[threading.Thread] = None
+    encode_q: Optional["queue.Queue[Optional[bytes]]"] = None
+    writer_error: List[BaseException] = field(default_factory=list)
+    session: Optional[RVMSession] = None
+    W: int = 0
+    H: int = 0
+    fps: float = 0.0
+    dsr: float = 1.0
+    do_post: bool = False
+    low: int = 0
+    high: int = 255
+    edge: int = 0
+    feather: int = 0
 
 
 class JobManager:
@@ -120,124 +147,16 @@ class JobManager:
         return True
 
     def _run(self, job: Job) -> None:
-        decoder = None
-        encoder = None
-        writer_t = None
+        ctx = _RunCtx()
         try:
             job.status = JobStatus.RUNNING
             job.started_at = time.time()
-
-            info = probe(job.input_path)
-            W, H, fps = info["width"], info["height"], info["fps"]
-            job.n_frames_total = info["n_frames"]
-
-            dsr = job.downsample_ratio
-            if dsr is None:
-                dsr = suggest_downsample_ratio(W, H)
-
-            # Shared session cache. reset() clears any recurrent state
-            # left from a previous clip (preview or earlier job).
-            session = get_session(job.model_path)
-            session.reset()
-            job.provider = session.active_provider
-
-            audio_source = None if job.mute else job.input_path
-
-            decoder = open_decoder(job.input_path)
-            if job.output_format == "webm":
-                encoder = open_webm_encoder(
-                    job.output_path, W, H, fps, audio_source=audio_source
-                )
-            else:
-                encoder = open_prores_encoder(
-                    job.output_path, W, H, fps, audio_source=audio_source
-                )
-
-            assert encoder.stdin is not None
-
-            low, high, edge, feather = clamp_params(
-                job.alpha_low, job.alpha_high, job.edge_expand, job.feather
-            )
-            do_post = not is_default(low, high, edge, feather)
-
-            # Background writer thread: lets inference overlap with the
-            # ffmpeg write + encode time per frame instead of strictly
-            # serializing infer → tobytes → write → next infer.
-            # maxsize=2 is enough for steady-state overlap; bigger queues
-            # hold more RGBA per slot (33MB at 4K) and stretch cancel
-            # latency without adding throughput.
-            encode_q: "queue.Queue[Optional[bytes]]" = queue.Queue(maxsize=2)
-            writer_error: list[BaseException] = []
-
-            def _writer() -> None:
-                try:
-                    while not job._cancel.is_set():
-                        try:
-                            item = encode_q.get(timeout=0.2)
-                        except queue.Empty:
-                            continue
-                        if item is None:
-                            return
-                        try:
-                            encoder.stdin.write(item)
-                        except (BrokenPipeError, ValueError):
-                            return
-                except BaseException as exc:  # noqa: BLE001
-                    writer_error.append(exc)
-
-            writer_t = threading.Thread(target=_writer, daemon=True)
-            writer_t.start()
-
-            t0 = time.time()
-            canceled = False
-            for idx, rgb in enumerate(iter_frames(decoder, W, H)):
-                if job._cancel.is_set():
-                    canceled = True
-                    break
-
-                fgr, pha = session.infer(rgb, dsr)
-                if do_post:
-                    pha = postprocess_alpha(pha, low, high, edge, feather)
-                rgba = np.dstack([fgr, pha])
-                data = rgba.tobytes()
-
-                # Cancel-polling put: a slow encoder must not stall cancel.
-                while True:
-                    if job._cancel.is_set():
-                        canceled = True
-                        break
-                    try:
-                        encode_q.put(data, timeout=0.2)
-                        break
-                    except queue.Full:
-                        continue
-                if canceled:
-                    break
-
-                job.n_frames_done = idx + 1
-                if job.n_frames_total > 0:
-                    job.progress = min(1.0, job.n_frames_done / job.n_frames_total)
-                dt = time.time() - t0
-                if dt > 0:
-                    job.fps_processed = job.n_frames_done / dt
-                    remaining = max(0, job.n_frames_total - job.n_frames_done)
-                    if job.fps_processed > 0:
-                        job.eta_seconds = remaining / job.fps_processed
-
+            self._setup(job, ctx)
+            canceled = self._loop(job, ctx)
             if canceled:
-                # Skip graceful drain — the file is going to be discarded
-                # anyway. finally will kill the encoder/decoder and the
-                # writer exits via cancel poll / BrokenPipeError.
                 job.status = JobStatus.CANCELED
             else:
-                # Normal completion: drain writer, finalize encoder.
-                encode_q.put(None)
-                writer_t.join(timeout=60)
-                if writer_error:
-                    raise writer_error[0]
-                encoder.stdin.close()
-                encoder.wait(timeout=900)
-                decoder.wait(timeout=60)
+                self._finalize_normal(ctx)
                 job.progress = 1.0
                 job.status = JobStatus.DONE
             job.finished_at = time.time()
@@ -246,34 +165,154 @@ class JobManager:
             job.status = JobStatus.FAILED
             job.finished_at = time.time()
         finally:
-            # Encoder: graceful close on normal flow (already done above),
-            # kill on cancel/exception so the writer's pending write fails
-            # promptly with BrokenPipeError.
-            if encoder is not None and encoder.poll() is None:
+            self._cleanup(job, ctx)
+
+    # ---------------- setup ----------------
+
+    def _setup(self, job: Job, ctx: _RunCtx) -> None:
+        """Probe input, allocate session/decoder/encoder, start writer thread."""
+        info = probe(job.input_path)
+        ctx.W, ctx.H, ctx.fps = info["width"], info["height"], info["fps"]
+        job.n_frames_total = info["n_frames"]
+
+        ctx.dsr = job.downsample_ratio or suggest_downsample_ratio(ctx.W, ctx.H)
+
+        # Shared session cache. reset() clears any recurrent state left
+        # from a previous clip (preview or earlier job).
+        ctx.session = get_session(job.model_path)
+        ctx.session.reset()
+        job.provider = ctx.session.active_provider
+
+        audio_source = None if job.mute else job.input_path
+        ctx.decoder = open_decoder(job.input_path)
+        if job.output_format == "webm":
+            ctx.encoder = open_webm_encoder(
+                job.output_path, ctx.W, ctx.H, ctx.fps, audio_source=audio_source
+            )
+        else:
+            ctx.encoder = open_prores_encoder(
+                job.output_path, ctx.W, ctx.H, ctx.fps, audio_source=audio_source
+            )
+        assert ctx.encoder.stdin is not None
+
+        ctx.low, ctx.high, ctx.edge, ctx.feather = clamp_params(
+            job.alpha_low, job.alpha_high, job.edge_expand, job.feather
+        )
+        ctx.do_post = not is_default(ctx.low, ctx.high, ctx.edge, ctx.feather)
+
+        # Background writer thread lets RVM inference overlap with the
+        # ffmpeg write+encode for the previous frame. maxsize=2 is
+        # enough for steady-state overlap; bigger queues hold more RGBA
+        # per slot (33MB at 4K) and stretch cancel latency without
+        # adding throughput.
+        ctx.encode_q = queue.Queue(maxsize=2)
+        ctx.writer_t = threading.Thread(
+            target=self._writer, args=(job, ctx), daemon=True
+        )
+        ctx.writer_t.start()
+
+    @staticmethod
+    def _writer(job: Job, ctx: _RunCtx) -> None:
+        """Drain encode_q to encoder.stdin; bail on cancel or broken pipe."""
+        try:
+            while not job._cancel.is_set():
                 try:
-                    encoder.kill()
-                except Exception:
-                    pass
+                    item = ctx.encode_q.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                if item is None:
+                    return
                 try:
-                    encoder.wait(timeout=5)
-                except Exception:
-                    pass
-            # Writer thread: encoder is gone, give the writer a moment to
-            # notice and exit. Cancel poll also helps it bail.
-            if writer_t is not None and writer_t.is_alive():
-                writer_t.join(timeout=2)
-            # Decoder is still reading the input file; on early exit
-            # ffmpeg blocks on its stdout buffer until we kill it.
-            if decoder is not None and decoder.poll() is None:
+                    ctx.encoder.stdin.write(item)
+                except (BrokenPipeError, ValueError):
+                    return
+        except BaseException as exc:  # noqa: BLE001
+            ctx.writer_error.append(exc)
+
+    # ---------------- loop ----------------
+
+    def _loop(self, job: Job, ctx: _RunCtx) -> bool:
+        """Per-frame infer + enqueue loop. Returns True if canceled mid-stream."""
+        t0 = time.time()
+        canceled = False
+        for idx, rgb in enumerate(iter_frames(ctx.decoder, ctx.W, ctx.H)):
+            if job._cancel.is_set():
+                canceled = True
+                break
+
+            fgr, pha = ctx.session.infer(rgb, ctx.dsr)
+            if ctx.do_post:
+                pha = postprocess_alpha(pha, ctx.low, ctx.high, ctx.edge, ctx.feather)
+            data = np.dstack([fgr, pha]).tobytes()
+
+            # Cancel-polling put: a slow encoder must not stall cancel.
+            while True:
+                if job._cancel.is_set():
+                    canceled = True
+                    break
                 try:
-                    decoder.kill()
-                except Exception:
-                    pass
-            # Drop a half-written file when the job didn't complete normally.
-            # Cancelled jobs may still have wanted the partial output, but the
-            # safer default is to discard — users can re-run to keep results.
-            if job.status in (JobStatus.CANCELED, JobStatus.FAILED):
-                try:
-                    Path(job.output_path).unlink(missing_ok=True)
-                except Exception:
-                    pass
+                    ctx.encode_q.put(data, timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
+            if canceled:
+                break
+
+            job.n_frames_done = idx + 1
+            if job.n_frames_total > 0:
+                job.progress = min(1.0, job.n_frames_done / job.n_frames_total)
+            dt = time.time() - t0
+            if dt > 0:
+                job.fps_processed = job.n_frames_done / dt
+                remaining = max(0, job.n_frames_total - job.n_frames_done)
+                if job.fps_processed > 0:
+                    job.eta_seconds = remaining / job.fps_processed
+        return canceled
+
+    # ---------------- finalize / cleanup ----------------
+
+    def _finalize_normal(self, ctx: _RunCtx) -> None:
+        """Normal-completion drain: flush writer, close stdin, wait subprocesses."""
+        ctx.encode_q.put(None)
+        ctx.writer_t.join(timeout=60)
+        if ctx.writer_error:
+            raise ctx.writer_error[0]
+        ctx.encoder.stdin.close()
+        ctx.encoder.wait(timeout=900)
+        ctx.decoder.wait(timeout=60)
+
+    def _cleanup(self, job: Job, ctx: _RunCtx) -> None:
+        """Always-run teardown. Each step is independently guarded so a
+        failure in one cleanup doesn't skip the next."""
+        # Encoder: graceful close already happened on normal flow; on
+        # cancel/exception, kill so the writer's pending write fails
+        # promptly with BrokenPipeError.
+        if ctx.encoder is not None and ctx.encoder.poll() is None:
+            try:
+                ctx.encoder.kill()
+            except Exception:
+                pass
+            try:
+                ctx.encoder.wait(timeout=5)
+            except Exception:
+                pass
+        # Writer thread: encoder is gone, give the writer a moment to
+        # notice and exit. The cancel poll also helps it bail.
+        if ctx.writer_t is not None and ctx.writer_t.is_alive():
+            ctx.writer_t.join(timeout=2)
+        # Decoder is still reading the input file; on early exit ffmpeg
+        # blocks on its stdout buffer until we kill it.
+        if ctx.decoder is not None and ctx.decoder.poll() is None:
+            try:
+                ctx.decoder.kill()
+            except Exception:
+                pass
+        # Drop a half-written file when the job didn't complete normally.
+        # Cancelled jobs may still have wanted the partial output, but
+        # the safer default is to discard — users can re-run to keep
+        # results.
+        if job.status in (JobStatus.CANCELED, JobStatus.FAILED):
+            try:
+                Path(job.output_path).unlink(missing_ok=True)
+            except Exception:
+                pass
