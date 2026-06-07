@@ -1,15 +1,13 @@
 """Image background removal API (mounted under /api/image)."""
 from __future__ import annotations
 
-import shutil
-import tempfile
 import uuid
 from collections import OrderedDict
 from io import BytesIO
 from pathlib import Path
 
 import numpy as np
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel
@@ -75,18 +73,6 @@ def list_models() -> dict:
         "default": DEFAULT_MODEL,
         "loaded": loaded_models(),
     }
-
-
-@router.post("/upload")
-async def upload_image(image: UploadFile = File(...)) -> dict:
-    """Save a dropped image to a temp file and return its full path."""
-    suffix = Path(image.filename or "image.png").suffix or ".png"
-    tmpdir = Path(tempfile.gettempdir()) / "bgremove_uploads"
-    tmpdir.mkdir(exist_ok=True)
-    dest = tmpdir / f"{uuid.uuid4().hex[:8]}{suffix}"
-    with dest.open("wb") as fh:
-        shutil.copyfileobj(image.file, fh)
-    return {"path": str(dest), "name": image.filename}
 
 
 @router.get("/source")

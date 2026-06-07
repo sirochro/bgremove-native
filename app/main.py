@@ -1,6 +1,7 @@
 """bgremove-native entry point: launch FastAPI server, open pywebview window."""
 from __future__ import annotations
 
+import json
 import socket
 import sys
 import threading
@@ -9,6 +10,7 @@ from typing import Optional
 
 import uvicorn
 import webview
+from webview.dom import DOMEventHandler
 
 from app.server import app
 
@@ -102,6 +104,38 @@ class JsAPI:
         return result[0] if isinstance(result, (list, tuple)) else result
 
 
+def _first_dropped_path(event: dict) -> Optional[str]:
+    files = (event.get("dataTransfer") or {}).get("files") or []
+    for f in files:
+        full = f.get("pywebviewFullPath")
+        if full:
+            return full
+    return None
+
+
+def _bind_drop_handlers(window: webview.Window) -> None:
+    """Register native drop handlers so dropped files surface their real OS path."""
+
+    def on_video_drop(e: dict) -> None:
+        path = _first_dropped_path(e)
+        if not path:
+            return
+        window.evaluate_js(f"window.__princeOnVideoDrop({json.dumps(path)})")
+
+    def on_image_drop(e: dict) -> None:
+        path = _first_dropped_path(e)
+        if not path:
+            return
+        window.evaluate_js(f"window.__princeOnImageDrop({json.dumps(path)})")
+
+    v_drop = window.dom.get_element("#v-drop")
+    if v_drop is not None:
+        v_drop.events.drop += DOMEventHandler(on_video_drop, True, True)
+    img_drop = window.dom.get_element("#img-drop")
+    if img_drop is not None:
+        img_drop.events.drop += DOMEventHandler(on_image_drop, True, True)
+
+
 def main() -> int:
     port = find_free_port()
     server_thread = threading.Thread(target=run_server, args=(port,), daemon=True)
@@ -120,7 +154,7 @@ def main() -> int:
         js_api=api,
     )
     api._window = window
-    webview.start()
+    webview.start(_bind_drop_handlers, window, private_mode=False)
     return 0
 
 

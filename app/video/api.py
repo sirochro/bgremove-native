@@ -3,14 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
-import tempfile
 import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -58,20 +56,6 @@ def health() -> dict:
         "models": models,
         "ready": FFMPEG.exists() and FFPROBE.exists() and bool(models),
     }
-
-
-# ---------------- Upload (for dropped files that have no usable path) ----------------
-
-@router.post("/upload")
-async def upload_video(video: UploadFile = File(...)) -> dict:
-    """Save a dropped video to a temp file and return its full path."""
-    suffix = Path(video.filename or "video.mp4").suffix or ".mp4"
-    tmpdir = Path(tempfile.gettempdir()) / "bgremove_uploads"
-    tmpdir.mkdir(exist_ok=True)
-    dest = tmpdir / f"{uuid.uuid4().hex[:8]}{suffix}"
-    with dest.open("wb") as fh:
-        shutil.copyfileobj(video.file, fh)
-    return {"path": str(dest), "name": video.filename}
 
 
 # ---------------- First-frame preview ----------------

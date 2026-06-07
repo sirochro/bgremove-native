@@ -54,6 +54,19 @@
   .pane { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 14px; }
   .pane h3 { font-size: 11px; margin: 0 0 10px; color: #888; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
   .img-wrap { position: relative; display: flex; align-items: center; justify-content: center; min-height: 360px; background-image: linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; border-radius: 4px; }
+  body[data-preview-bg="white"] .img-wrap { background-image: none; background-color: #fff; }
+  body[data-preview-bg="gray"] .img-wrap { background-image: none; background-color: #808080; }
+  body[data-preview-bg="black"] .img-wrap { background-image: none; background-color: #000; }
+  .preview-header { display: flex; align-items: center; justify-content: space-between; margin: 0 0 18px; }
+  .preview-header h2 { margin: 0; }
+  .bg-picker { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #888; letter-spacing: 0.08em; text-transform: uppercase; }
+  .bg-swatch { width: 18px; height: 18px; border: 1px solid #555; border-radius: 3px; padding: 0; cursor: pointer; box-sizing: border-box; }
+  .bg-swatch:hover { border-color: #888; }
+  .bg-swatch.active { border-color: #4a90d9; border-width: 2px; }
+  .bg-swatch.bg-transparent { background-image: linear-gradient(45deg, #888 25%, transparent 25%), linear-gradient(-45deg, #888 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #888 75%), linear-gradient(-45deg, transparent 75%, #888 75%); background-size: 8px 8px; background-position: 0 0, 0 4px, 4px -4px, -4px 0; background-color: #fff; }
+  .bg-swatch.bg-white { background: #fff; }
+  .bg-swatch.bg-gray { background: #808080; }
+  .bg-swatch.bg-black { background: #000; }
   .img-wrap img { max-width: 100%; max-height: 65vh; display: block; position: relative; z-index: 1; }
   .img-wrap img:not([src]), .img-wrap img[src=""] { display: none; }
   .img-wrap .placeholder { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #555; font-size: 13px; pointer-events: none; }
@@ -139,7 +152,6 @@
       <div class="col-drop">
         <div id="img-drop">
           <p>クリックで選択 ｜ファイルをドロップ</p>
-          <input type="file" id="img-file" accept="image/*">
         </div>
       </div>
     </div>
@@ -152,7 +164,15 @@
   </section>
 
   <section id="img-panes">
-    <h2>プレビュー</h2>
+    <div class="preview-header">
+      <h2>プレビュー</h2>
+      <div class="bg-picker">背景色：
+        <button class="bg-swatch bg-transparent" data-bg="transparent" title="透明"></button>
+        <button class="bg-swatch bg-white" data-bg="white" title="白"></button>
+        <button class="bg-swatch bg-gray" data-bg="gray" title="グレー (50%)"></button>
+        <button class="bg-swatch bg-black" data-bg="black" title="黒"></button>
+      </div>
+    </div>
     <div class="img-grid">
       <div class="pane">
         <h3>Original</h3>
@@ -252,7 +272,15 @@
   </section>
 
   <section id="v-preview-section">
-    <h2>プレビュー（1 フレーム目）</h2>
+    <div class="preview-header">
+      <h2>プレビュー（1 フレーム目）</h2>
+      <div class="bg-picker">背景色：
+        <button class="bg-swatch bg-transparent" data-bg="transparent" title="透明"></button>
+        <button class="bg-swatch bg-white" data-bg="white" title="白"></button>
+        <button class="bg-swatch bg-gray" data-bg="gray" title="グレー (50%)"></button>
+        <button class="bg-swatch bg-black" data-bg="black" title="黒"></button>
+      </div>
+    </div>
     <div class="img-grid">
       <div class="pane">
         <h3>Original</h3>
@@ -332,6 +360,24 @@ function loadParams() {
     Object.entries(data).forEach(([id, val]) => writeEl(id, val));
   } catch (e) { console.warn('loadParams failed:', e); }
 }
+/* ----- Preview background color (shared between image and video) ----- */
+const PREVIEW_BG_KEY = 'bgremove-preview-bg-v1';
+function applyPreviewBg(bg) {
+  document.body.setAttribute('data-preview-bg', bg);
+  document.querySelectorAll('.bg-swatch').forEach(b => {
+    b.classList.toggle('active', b.dataset.bg === bg);
+  });
+  try { localStorage.setItem(PREVIEW_BG_KEY, bg); } catch {}
+}
+(function initPreviewBg() {
+  let saved = 'transparent';
+  try { saved = localStorage.getItem(PREVIEW_BG_KEY) || 'transparent'; } catch {}
+  applyPreviewBg(saved);
+  document.querySelectorAll('.bg-swatch').forEach(b => {
+    b.addEventListener('click', () => applyPreviewBg(b.dataset.bg));
+  });
+})();
+
 function resetDefaults(defaults) {
   Object.entries(defaults).forEach(([id, val]) => writeEl(id, val));
   saveParams();
@@ -358,7 +404,7 @@ async function refreshHealth() {
 
 /* ============ Image tab ============ */
 (() => {
-  const drop = $('img-drop'), file = $('img-file'), status = $('img-status');
+  const drop = $('img-drop'), status = $('img-status');
   const pathInput = $('img-path'), pickBtn = $('img-pick');
   const modelSel = $('img-model');
   const panes = $('img-panes');
@@ -404,16 +450,8 @@ async function refreshHealth() {
   });
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-  drop.addEventListener('drop', async e => {
-    e.preventDefault(); drop.classList.remove('over');
-    const f = e.dataTransfer.files[0];
-    if (!f) return;
-    await uploadAndSet(f);
-  });
-  file.addEventListener('change', async () => {
-    if (!file.files.length) return;
-    await uploadAndSet(file.files[0]);
-  });
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); });
+  // Native drop path comes from pywebview via window.__princeOnImageDrop (set below).
 
   modelSel.addEventListener('change', () => {
     saveParams();
@@ -437,22 +475,6 @@ async function refreshHealth() {
     status.textContent = ''; status.className = 'msg';
     saveMsg.textContent = ''; saveMsg.className = 'msg';
   });
-
-  async function uploadAndSet(f) {
-    status.textContent = 'アップロード中...';
-    status.className = 'msg';
-    const fd = new FormData();
-    fd.append('image', f);
-    try {
-      const r = await fetch('/api/image/upload', { method: 'POST', body: fd });
-      if (!r.ok) throw new Error(r.statusText);
-      const j = await r.json();
-      setImageInput(j.path);
-    } catch (err) {
-      status.textContent = 'アップロード失敗: ' + err.message;
-      status.className = 'msg error';
-    }
-  }
 
   function setImageInput(path) {
     pathInput.value = path;
@@ -550,6 +572,8 @@ async function refreshHealth() {
       saveMsg.className = 'msg error';
     }
   });
+
+  window.__princeOnImageDrop = setImageInput;
 })();
 
 /* ============ Video tab ============ */
@@ -636,30 +660,16 @@ vDrop.addEventListener('click', async () => {
 });
 vDrop.addEventListener('dragover', e => { e.preventDefault(); vDrop.classList.add('over'); });
 vDrop.addEventListener('dragleave', () => vDrop.classList.remove('over'));
-vDrop.addEventListener('drop', async e => {
-  e.preventDefault(); vDrop.classList.remove('over');
-  const f = e.dataTransfer.files[0];
-  if (!f) return;
-  vMsg.textContent = 'アップロード中...'; vMsg.className = 'msg';
-  const fd = new FormData();
-  fd.append('video', f);
-  try {
-    const r = await fetch('/api/video/upload', { method: 'POST', body: fd });
-    if (!r.ok) throw new Error(r.statusText);
-    const j = await r.json();
-    vMsg.textContent = `アップロード完了: ${j.name}`; vMsg.className = 'msg success';
-    setVideoInput(j.path);
-  } catch (err) {
-    vMsg.textContent = 'アップロード失敗: ' + err.message;
-    vMsg.className = 'msg error';
-  }
-});
+vDrop.addEventListener('drop', e => { e.preventDefault(); vDrop.classList.remove('over'); });
+// Native drop path comes from pywebview via window.__princeOnVideoDrop (set below).
 
 function setVideoInput(path) {
   vInPath.value = path;
+  vMsg.textContent = ''; vMsg.className = 'msg';
   updateVStartEnabled();
   requestVideoPreview(0);
 }
+window.__princeOnVideoDrop = setVideoInput;
 
 function requestVideoPreview(delay) {
   if (vPreviewTimer) clearTimeout(vPreviewTimer);
