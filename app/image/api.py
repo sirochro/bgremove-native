@@ -1,10 +1,7 @@
 """Image background removal API (mounted under /api/image)."""
 from __future__ import annotations
 
-import uuid
-from collections import OrderedDict
 from io import BytesIO
-from pathlib import Path
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
@@ -15,6 +12,7 @@ from pydantic import BaseModel, Field
 from rembg import remove
 
 from app.alpha import clamp_params, is_default, postprocess_alpha
+from app.blob_cache import BlobCache
 from app.image.session import (
     AVAILABLE_MODELS,
     DEFAULT_MODEL,
@@ -25,8 +23,8 @@ from app.path_validation import validate_input_path, validate_output_path
 
 router = APIRouter()
 
-_MAX_RESULTS = 20
-_results: "OrderedDict[str, bytes]" = OrderedDict()
+# Result blob cache, bounded by both count and total bytes (500 MB).
+_results = BlobCache(max_count=20, max_bytes=500 * 1024 * 1024)
 
 _MIME_BY_EXT = {
     ".png": "image/png",
@@ -38,14 +36,6 @@ _MIME_BY_EXT = {
     ".webp": "image/webp",
     ".gif": "image/gif",
 }
-
-
-def _add_result(data: bytes) -> str:
-    result_id = uuid.uuid4().hex[:12]
-    _results[result_id] = data
-    while len(_results) > _MAX_RESULTS:
-        _results.popitem(last=False)
-    return result_id
 
 
 def _apply_alpha_postprocess(
@@ -109,7 +99,7 @@ def remove_bg(req: RemoveRequest) -> dict:
     if not is_default(low, high, edge, feath):
         png_bytes = _apply_alpha_postprocess(png_bytes, low, high, edge, feath)
 
-    return {"result_id": _add_result(png_bytes), "model": req.model}
+    return {"result_id": _results.add(png_bytes), "model": req.model}
 
 
 @router.get("/result/{result_id}")

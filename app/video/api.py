@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import uuid
-from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +11,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from app.blob_cache import BlobCache
 from app.path_validation import validate_input_path, validate_output_path
 from app.video.jobs import Job, JobManager, JobStatus
 from app.video.pipeline import FFMPEG, FFPROBE
@@ -24,17 +23,9 @@ MODELS_DIR = ROOT / "models"
 router = APIRouter()
 _manager = JobManager()
 
-# Cache: result_id → PNG bytes (used for first-frame previews).
-_MAX_PREVIEWS = 40
-_previews: "OrderedDict[str, bytes]" = OrderedDict()
-
-
-def _add_preview(data: bytes) -> str:
-    pid = uuid.uuid4().hex[:12]
-    _previews[pid] = data
-    while len(_previews) > _MAX_PREVIEWS:
-        _previews.popitem(last=False)
-    return pid
+# First-frame preview blobs (orig + processed PNG, one pair per request).
+# Bounded by both count and total bytes (500 MB).
+_previews = BlobCache(max_count=40, max_bytes=500 * 1024 * 1024)
 
 
 def list_models() -> list[dict]:
@@ -90,8 +81,8 @@ def create_preview(req: PreviewRequest) -> dict:
     except Exception as exc:
         raise HTTPException(500, f"Preview failed: {exc}") from exc
     return {
-        "orig_id": _add_preview(orig),
-        "proc_id": _add_preview(proc),
+        "orig_id": _previews.add(orig),
+        "proc_id": _previews.add(proc),
         "info": info,
     }
 
