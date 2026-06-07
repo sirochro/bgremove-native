@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
 import uvicorn
@@ -104,6 +106,19 @@ class JsAPI:
         return result[0] if isinstance(result, (list, tuple)) else result
 
 
+def _storage_path() -> str:
+    """Per-app dir for the WebView2 user-data (localStorage / cookies)."""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = str(Path.home() / "Library" / "Application Support")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    path = Path(base) / "bgremove-native" / "webview"
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
+
+
 def _first_dropped_path(event: dict) -> Optional[str]:
     files = (event.get("dataTransfer") or {}).get("files") or []
     for f in files:
@@ -154,7 +169,9 @@ def main() -> int:
         js_api=api,
     )
     api._window = window
-    webview.start(_bind_drop_handlers, window, private_mode=False)
+    webview.start(
+        _bind_drop_handlers, window, private_mode=False, storage_path=_storage_path()
+    )
     return 0
 
 
