@@ -112,10 +112,7 @@
     <div class="topgrid">
       <div class="col-form">
         <label>入力ソース</label>
-        <div class="input-with-btn">
-          <input type="text" id="img-path" readonly placeholder="（未選択）">
-          <button id="img-pick">選択...</button>
-        </div>
+        <input type="text" id="img-path" readonly placeholder="（未選択）">
 
         <label>モデル</label>
         <select id="img-model"></select>
@@ -436,7 +433,7 @@ async function refreshHealth() {
 /* ============ Image tab ============ */
 (() => {
   const drop = $('img-drop'), status = $('img-status');
-  const pathInput = $('img-path'), pickBtn = $('img-pick');
+  const pathInput = $('img-path');
   const modelSel = $('img-model');
   const panes = $('img-panes');
   const orig = $('img-orig'), result = $('img-result'), dl = $('img-download');
@@ -472,10 +469,6 @@ async function refreshHealth() {
     return await window.pywebview.api.open_input_image();
   }
 
-  pickBtn.addEventListener('click', async () => {
-    const path = await pickViaPywebview();
-    if (path) setImageInput(path);
-  });
   drop.addEventListener('click', async () => {
     const path = await pickViaPywebview();
     if (path) setImageInput(path);
