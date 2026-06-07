@@ -1,11 +1,15 @@
-"""rembg DirectML session pool for image background removal."""
-from __future__ import annotations
+"""rembg DirectML session cache for image background removal.
 
-from typing import Dict
+Only one session is held at a time. See app/session_cache.py for the
+VRAM-exhaustion rationale that made this necessary.
+"""
+from __future__ import annotations
 
 from fastapi import HTTPException
 from rembg import new_session
 from rembg.sessions.base import BaseSession
+
+from app.session_cache import SingleSessionCache
 
 AVAILABLE_MODELS = [
     "u2net",
@@ -28,16 +32,19 @@ AVAILABLE_MODELS = [
 DEFAULT_MODEL = "u2net"
 PROVIDERS = ["DmlExecutionProvider", "CPUExecutionProvider"]
 
-_sessions: Dict[str, BaseSession] = {}
+
+def _load(model_name: str) -> BaseSession:
+    return new_session(model_name, providers=PROVIDERS)
+
+
+_cache: SingleSessionCache[BaseSession] = SingleSessionCache(_load)
 
 
 def get_session(model_name: str) -> BaseSession:
     if model_name not in AVAILABLE_MODELS:
         raise HTTPException(status_code=400, detail=f"Unknown model: {model_name}")
-    if model_name not in _sessions:
-        _sessions[model_name] = new_session(model_name, providers=PROVIDERS)
-    return _sessions[model_name]
+    return _cache.get(model_name)
 
 
 def loaded_models() -> list[str]:
-    return list(_sessions.keys())
+    return _cache.loaded()

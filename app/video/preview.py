@@ -9,17 +9,19 @@ import numpy as np
 from PIL import Image
 
 from app.alpha import clamp_params, is_default, postprocess_alpha
+from app.session_cache import SingleSessionCache
 from app.video.matting import RVMSession, suggest_downsample_ratio
 from app.video.pipeline import FFMPEG, ensure_tools, probe
 
-# Shared session cache (reused across previews of the same model).
-_sessions: dict[str, RVMSession] = {}
+# Only one RVM session held at a time. Caching multiple keeps each
+# model's DirectML VRAM live and risks host-level GPU memory exhaustion.
+_cache: SingleSessionCache[RVMSession] = SingleSessionCache(
+    lambda path: RVMSession(path)
+)
 
 
 def get_session(model_path: str) -> RVMSession:
-    if model_path not in _sessions:
-        _sessions[model_path] = RVMSession(model_path)
-    return _sessions[model_path]
+    return _cache.get(model_path)
 
 
 def extract_first_frame(video_path: str, width: int, height: int) -> np.ndarray:

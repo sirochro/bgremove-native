@@ -1,6 +1,7 @@
 """Video matting jobs: decode → RVM infer → alpha post-process → encode."""
 from __future__ import annotations
 
+import gc
 import queue
 import threading
 import time
@@ -112,6 +113,7 @@ class JobManager:
         decoder = None
         encoder = None
         writer_t = None
+        session = None
         try:
             job.status = JobStatus.RUNNING
             job.started_at = time.time()
@@ -263,3 +265,8 @@ class JobManager:
                     Path(job.output_path).unlink(missing_ok=True)
                 except Exception:
                     pass
+            # Release the per-job RVM session deterministically so its
+            # DirectML VRAM is freed before the next job starts.
+            if session is not None:
+                session = None
+                gc.collect()
