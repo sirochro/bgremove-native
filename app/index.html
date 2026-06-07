@@ -84,17 +84,14 @@
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   .actions { margin-top: 28px; display: flex; gap: 8px; justify-content: center; }
 
-  /* Progress */
-  #v-progress-section { display: none; }
-  .pbar { height: 10px; background: #1a1a1a; border-radius: 5px; overflow: hidden; border: 1px solid #333; }
-  .pbar > div { height: 100%; background: linear-gradient(90deg, #3a7abe, #5aa0d8); transition: width 0.2s; width: 0; }
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; font-size: 13px; }
-  .stat { background: #1a1a1a; padding: 10px 12px; border-radius: 4px; border: 1px solid #2a2a2a; }
-  .stat .k { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-  .stat .v { color: #e0e0e0; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .msg { margin-top: 10px; font-size: 13px; color: #888; min-height: 18px; }
+  /* Message line — also carries the in-flight progress bar + stats. */
+  .msg { margin-top: 10px; font-size: 13px; color: #888; min-height: 18px; display: flex; align-items: center; gap: 10px; }
   .msg.error { color: #cf6f6f; }
   .msg.success { color: #6fcf6f; }
+  .msg-pbar { display: none; width: 120px; height: 8px; background: #1a1a1a; border-radius: 4px; overflow: hidden; border: 1px solid #333; flex-shrink: 0; }
+  .msg-pbar.show { display: block; }
+  .msg-pbar > span { display: block; height: 100%; background: linear-gradient(90deg, #3a7abe, #5aa0d8); transition: width 0.2s; width: 0; }
+  .msg-text { font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -267,7 +264,10 @@
       <button id="v-defaults">リセット</button>
       <button class="primary" id="v-start" disabled>処理開始</button>
     </div>
-    <div class="msg" id="v-msg"></div>
+    <div class="msg" id="v-msg">
+      <div class="msg-pbar" id="v-msg-pbar"><span id="v-msg-pbar-fill"></span></div>
+      <span class="msg-text" id="v-msg-text"></span>
+    </div>
   </section>
 
   <section id="v-preview-section">
@@ -292,16 +292,6 @@
     </div>
   </section>
 
-  <section id="v-progress-section">
-    <h2>進捗</h2>
-    <div class="pbar"><div id="v-pbar-fill"></div></div>
-    <div class="stats">
-      <div class="stat"><div class="k">Progress</div><div class="v" id="v-s-pct">0%</div></div>
-      <div class="stat"><div class="k">Frames</div><div class="v" id="v-s-frames">0 / 0</div></div>
-      <div class="stat"><div class="k">FPS</div><div class="v" id="v-s-fps">—</div></div>
-      <div class="stat"><div class="k">ETA</div><div class="v" id="v-s-eta">—</div></div>
-    </div>
-  </section>
 </div>
 
 </main>
@@ -620,8 +610,9 @@ const IMG_LOCK_IDS = [
 const vModelSel = $('v-model');
 const vStartBtn = $('v-start');
 const vMsg = $('v-msg');
-const vProgressSec = $('v-progress-section');
-const vPbarFill = $('v-pbar-fill');
+const vMsgText = $('v-msg-text');
+const vMsgPbar = $('v-msg-pbar');
+const vMsgPbarFill = $('v-msg-pbar-fill');
 const vInPath = $('v-input'), vOutPath = $('v-output');
 const vDrop = $('v-drop');
 const vPreviewSec = $('v-preview-section');
@@ -636,6 +627,27 @@ function formatEta(sec) {
   sec = Math.round(sec);
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   return h > 0 ? `${h}h ${m}m` : (m > 0 ? `${m}m ${s}s` : `${s}s`);
+}
+
+// Message line helpers — vMsg also carries the in-flight progress bar.
+function setVMsg(text, klass) {
+  vMsg.className = klass || 'msg';
+  vMsgText.textContent = text || '';
+}
+
+function showVProgress(pct, n_done, n_total, fps, eta_seconds) {
+  vMsg.className = 'msg';
+  vMsgPbar.classList.add('show');
+  vMsgPbarFill.style.width = pct + '%';
+  const fpsStr = (fps && isFinite(fps) && fps > 0) ? fps.toFixed(1) : '—';
+  const totalStr = (n_total && n_total > 0) ? n_total.toLocaleString() : '?';
+  const framesStr = `${n_done.toLocaleString()}/${totalStr}f`;
+  vMsgText.textContent = `${pct}% · ${framesStr} · ${fpsStr}fps · ETA ${formatEta(eta_seconds)}`;
+}
+
+function hideVProgress() {
+  vMsgPbar.classList.remove('show');
+  vMsgPbarFill.style.width = '0%';
 }
 
 let videoModelsLoaded = false;
@@ -717,12 +729,12 @@ $('v-defaults').addEventListener('click', () => {
   vOutPath.value = '';
   vPrevOrig.removeAttribute('src');
   vPrevResult.removeAttribute('src');
-  vMsg.textContent = ''; vMsg.className = 'msg';
+  setVMsg('');
   updateVStartEnabled();
 });
 
 vDrop.addEventListener('click', async () => {
-  if (!window.pywebview || !window.pywebview.api) { vMsg.textContent = 'pywebview API unavailable'; return; }
+  if (!window.pywebview || !window.pywebview.api) { setVMsg('pywebview API unavailable'); return; }
   const path = await window.pywebview.api.open_input_video();
   if (path) { setVideoInput(path); }
 });
@@ -733,7 +745,7 @@ vDrop.addEventListener('drop', e => { e.preventDefault(); vDrop.classList.remove
 
 function setVideoInput(path) {
   vInPath.value = path;
-  vMsg.textContent = ''; vMsg.className = 'msg';
+  setVMsg('');
   updateVStartEnabled();
   requestVideoPreview(0);
 }
@@ -753,7 +765,7 @@ async function previewVideo() {
   if (vPreviewing) { vPreviewQueued = true; return; }
   vPreviewing = true; vPreviewQueued = false;
   vPreviewSec.style.display = 'block';
-  vMsg.textContent = 'Processing preview...'; vMsg.className = 'msg';
+  setVMsg('Processing preview...');
   const body = {
     input_path: vInPath.value,
     model: vModelSel.value,
@@ -780,11 +792,9 @@ async function previewVideo() {
     vPrevResult.src = `/api/video/preview/${j.proc_id}?ts=${Date.now()}`;
     const dt = ((performance.now() - t0) / 1000).toFixed(2);
     const info = j.info;
-    vMsg.textContent = `${info.width}x${info.height} ${info.fps.toFixed(2)}fps ${info.n_frames.toLocaleString()}f / preview ${dt}s`;
-    vMsg.className = 'msg success';
+    setVMsg(`${info.width}x${info.height} ${info.fps.toFixed(2)}fps ${info.n_frames.toLocaleString()}f / preview ${dt}s`, 'msg success');
   } catch (e) {
-    vMsg.textContent = 'Preview error: ' + e.message;
-    vMsg.className = 'msg error';
+    setVMsg('Preview error: ' + e.message, 'msg error');
   } finally {
     vPreviewing = false;
     if (vPreviewQueued) previewVideo();
@@ -800,7 +810,7 @@ vModelSel.addEventListener('change', () => { if (vInPath.value) requestVideoPrev
 });
 
 $('v-pick-output').addEventListener('click', async () => {
-  if (!window.pywebview || !window.pywebview.api) { vMsg.textContent = 'pywebview API unavailable'; return; }
+  if (!window.pywebview || !window.pywebview.api) { setVMsg('pywebview API unavailable'); return; }
   const fmt = $('v-format').value;
   const ext = fmt === 'webm' ? 'webm' : 'mov';
   const base = vInPath.value ? vInPath.value.replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '') : 'output';
@@ -821,10 +831,10 @@ vStartBtn.addEventListener('click', async () => {
     await fetch(`/api/video/jobs/${vCurrentJobId}/cancel`, { method: 'POST' });
     return;
   }
-  vMsg.textContent = ''; vMsg.className = 'msg';
+  setVMsg('');
   if (!vOutPath.value) {
     if (!window.pywebview || !window.pywebview.api) {
-      vMsg.textContent = 'pywebview API unavailable'; vMsg.className = 'msg error';
+      setVMsg('pywebview API unavailable', 'msg error');
       return;
     }
     const fmt = $('v-format').value;
@@ -857,41 +867,29 @@ vStartBtn.addEventListener('click', async () => {
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: r.statusText }));
-    vMsg.textContent = 'Error: ' + (err.detail || r.statusText);
-    vMsg.className = 'msg error';
+    setVMsg('Error: ' + (err.detail || r.statusText), 'msg error');
     return;
   }
   const { job_id } = await r.json();
   vCurrentJobId = job_id;
   updateVStartEnabled();
-  vProgressSec.style.display = 'block';
-  vMsg.textContent = ''; vMsg.className = 'msg';
-  vPbarFill.style.width = '0%';
-  $('v-s-pct').textContent = '0%';
-  $('v-s-frames').textContent = '0 / ?';
-  $('v-s-fps').textContent = '—';
-  $('v-s-eta').textContent = '—';
+  showVProgress(0, 0, 0, 0, 0);
 
   vCurrentES = new EventSource(`/api/video/jobs/${job_id}/stream`);
   vCurrentES.onmessage = (ev) => {
     const j = JSON.parse(ev.data);
     const pct = Math.round(j.progress * 100);
-    vPbarFill.style.width = pct + '%';
-    $('v-s-pct').textContent = pct + '%';
-    $('v-s-frames').textContent = `${j.n_done.toLocaleString()} / ${j.n_total.toLocaleString()}`;
-    $('v-s-fps').textContent = j.fps ? j.fps.toFixed(1) : '—';
-    $('v-s-eta').textContent = formatEta(j.eta_seconds);
     if (j.status === 'done') {
-      vMsg.textContent = `完了 (provider: ${j.provider || 'unknown'})`;
-      vMsg.className = 'msg success';
+      setVMsg(`完了 (provider: ${j.provider || 'unknown'})`, 'msg success');
       finishVideoJob();
     } else if (j.status === 'failed') {
-      vMsg.textContent = 'Error: ' + (j.error || 'unknown');
-      vMsg.className = 'msg error';
+      setVMsg('Error: ' + (j.error || 'unknown'), 'msg error');
       finishVideoJob();
     } else if (j.status === 'canceled') {
-      vMsg.textContent = 'キャンセルされました';
+      setVMsg('キャンセルされました');
       finishVideoJob();
+    } else {
+      showVProgress(pct, j.n_done, j.n_total, j.fps, j.eta_seconds);
     }
   };
   vCurrentES.onerror = () => { /* auto-reconnect */ };
@@ -900,6 +898,7 @@ vStartBtn.addEventListener('click', async () => {
 function finishVideoJob() {
   if (vCurrentES) { vCurrentES.close(); vCurrentES = null; }
   vCurrentJobId = null;
+  hideVProgress();
   updateVStartEnabled();
 }
 
