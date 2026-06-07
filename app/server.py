@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 from app.image.api import router as image_router
+from app.params_api import router as params_router
 from app.video.api import router as video_router
 
 INDEX_PATH = Path(__file__).resolve().parent / "index.html"
@@ -14,6 +15,7 @@ INDEX_PATH = Path(__file__).resolve().parent / "index.html"
 app = FastAPI(title="bgremove-native")
 app.include_router(image_router, prefix="/api/image")
 app.include_router(video_router, prefix="/api/video")
+app.include_router(params_router, prefix="/api/state")
 
 
 @app.get("/api/health")

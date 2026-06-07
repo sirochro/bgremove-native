@@ -324,14 +324,39 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
-/* ============ Param persistence (localStorage) ============ */
-const STORAGE_KEY = 'bgremove-params-v1';
-
+/* ============ Param persistence (server-side JSON) ============ */
+const STATE_URL = '/api/state';
 const IMG_PARAM_IDS = ['img-alpha-low', 'img-alpha-high', 'img-edge-expand', 'img-feather', 'img-model'];
 const V_PARAM_IDS = ['v-alpha-low', 'v-alpha-high', 'v-edge-expand', 'v-feather', 'v-model', 'v-format', 'v-dsr', 'v-mute'];
 
 const IMG_DEFAULTS = { 'img-alpha-low': 0, 'img-alpha-high': 255, 'img-edge-expand': 0, 'img-feather': 0 };
 const V_DEFAULTS = { 'v-alpha-low': 0, 'v-alpha-high': 255, 'v-edge-expand': 0, 'v-feather': 0, 'v-format': 'prores', 'v-dsr': '', 'v-mute': false };
+
+let _state = {};
+let _stateReady = false;
+let _statePromise = null;
+let _saveTimer = null;
+
+function ensureStateLoaded() {
+  if (_statePromise) return _statePromise;
+  _statePromise = fetch(STATE_URL)
+    .then(r => r.ok ? r.json() : {})
+    .then(s => { _state = s || {}; _stateReady = true; })
+    .catch(e => { console.warn('state load failed:', e); _stateReady = true; });
+  return _statePromise;
+}
+
+function persistState() {
+  if (!_stateReady) return;
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    fetch(STATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(_state),
+    }).catch(e => console.warn('state save failed:', e));
+  }, 300);
+}
 
 function readEl(id) {
   const el = $(id); if (!el) return null;
@@ -348,34 +373,36 @@ function writeEl(id, val) {
   }
 }
 function saveParams() {
-  const data = {};
-  [...IMG_PARAM_IDS, ...V_PARAM_IDS].forEach(id => { data[id] = readEl(id); });
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+  if (!_stateReady) return;
+  [...IMG_PARAM_IDS, ...V_PARAM_IDS].forEach(id => {
+    const v = readEl(id);
+    if (v !== null) _state[id] = v;
+  });
+  persistState();
 }
 function loadParams() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    Object.entries(data).forEach(([id, val]) => writeEl(id, val));
-  } catch (e) { console.warn('loadParams failed:', e); }
+  if (!_stateReady) { ensureStateLoaded().then(loadParams); return; }
+  Object.entries(_state).forEach(([id, val]) => {
+    if (id.startsWith('_')) return;
+    writeEl(id, val);
+  });
 }
 /* ----- Preview background color (shared between image and video) ----- */
-const PREVIEW_BG_KEY = 'bgremove-preview-bg-v1';
 function applyPreviewBg(bg) {
   document.body.setAttribute('data-preview-bg', bg);
   document.querySelectorAll('.bg-swatch').forEach(b => {
     b.classList.toggle('active', b.dataset.bg === bg);
   });
-  try { localStorage.setItem(PREVIEW_BG_KEY, bg); } catch {}
+  if (_stateReady) {
+    _state._preview_bg = bg;
+    persistState();
+  }
 }
 (function initPreviewBg() {
-  let saved = 'transparent';
-  try { saved = localStorage.getItem(PREVIEW_BG_KEY) || 'transparent'; } catch {}
-  applyPreviewBg(saved);
   document.querySelectorAll('.bg-swatch').forEach(b => {
     b.addEventListener('click', () => applyPreviewBg(b.dataset.bg));
   });
+  ensureStateLoaded().then(() => applyPreviewBg(_state._preview_bg || 'transparent'));
 })();
 
 function resetDefaults(defaults) {
