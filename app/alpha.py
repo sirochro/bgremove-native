@@ -1,11 +1,15 @@
 """Shared alpha matte post-processing used by both image (rembg) and video (RVM) tabs.
 
 Order: low cut → high boost → expand/contract → Gaussian feather.
+
+cv2 is used for morphology and Gaussian blur — its SIMD/threaded
+implementations are several times faster than scipy.ndimage on 1080p–4K
+single-channel buffers, which matters per-frame in the video loop.
 """
 from __future__ import annotations
 
+import cv2
 import numpy as np
-from scipy.ndimage import gaussian_filter, grey_dilation, grey_erosion
 
 
 def postprocess_alpha(
@@ -29,14 +33,16 @@ def postprocess_alpha(
         out = np.where(out < low, np.uint8(0), out)
     if high < 255:
         out = np.where(out > high, np.uint8(255), out)
-    if edge > 0:
-        size = 2 * edge + 1
-        out = grey_dilation(out, size=(size, size))
-    elif edge < 0:
-        size = -2 * edge + 1
-        out = grey_erosion(out, size=(size, size))
+    if edge != 0:
+        size = 2 * abs(edge) + 1
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (size, size))
+        op = cv2.dilate if edge > 0 else cv2.erode
+        out = op(out, kernel)
     if feather > 0:
-        out = gaussian_filter(out, sigma=feather / 2.0)
+        sigma = feather / 2.0
+        # ksize=0 lets cv2 derive a kernel size from sigma; matches the
+        # behavior of scipy.ndimage.gaussian_filter closely enough.
+        out = cv2.GaussianBlur(out, (0, 0), sigmaX=sigma, sigmaY=sigma)
     return out.astype(np.uint8)
 
 

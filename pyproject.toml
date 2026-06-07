@@ -13,7 +13,10 @@ dependencies = [
     # Video (RVM)
     "onnxruntime-directml>=1.17.0",
     "numpy>=1.26.0",
-    "scipy>=1.12.0",
+    # cv2 (opencv-python-headless) for alpha post-process — its SIMD-tuned
+    # GaussianBlur and morphology are 5-10x faster than scipy.ndimage for
+    # the 1080p–4K sizes we hit per frame.
+    "opencv-python-headless>=4.9.0",
     # Common
     "pywebview>=5.0",
     "fastapi>=0.110.0",

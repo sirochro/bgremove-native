@@ -71,7 +71,9 @@ New-Item -ItemType Directory -Force -Path "models" | Out-Null
 $rvmBase = "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0"
 $rvmModels = @(
     @{ Name = "rvm_resnet50_fp32.onnx";     Size = 108MB },
-    @{ Name = "rvm_mobilenetv3_fp32.onnx";  Size = 15MB }
+    @{ Name = "rvm_mobilenetv3_fp32.onnx";  Size = 15MB },
+    @{ Name = "rvm_resnet50_fp16.onnx";     Size = 54MB },
+    @{ Name = "rvm_mobilenetv3_fp16.onnx";  Size = 7.5MB }
 )
 
 foreach ($m in $rvmModels) {

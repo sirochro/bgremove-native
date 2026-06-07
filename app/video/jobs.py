@@ -1,6 +1,7 @@
 """Video matting jobs: decode → RVM infer → alpha post-process → encode."""
 from __future__ import annotations
 
+import queue
 import subprocess
 import threading
 import time
@@ -145,6 +146,27 @@ class JobManager:
             )
             do_post = not is_default(low, high, edge, feather)
 
+            # Background writer thread: lets inference overlap with the
+            # ffmpeg write + encode time per frame instead of strictly
+            # serializing infer → tobytes → write → next infer.
+            encode_q: "queue.Queue[Optional[bytes]]" = queue.Queue(maxsize=4)
+            writer_error: list[BaseException] = []
+
+            def _writer() -> None:
+                try:
+                    while True:
+                        item = encode_q.get()
+                        if item is None:
+                            return
+                        encoder.stdin.write(item)
+                except (BrokenPipeError, ValueError):
+                    return
+                except BaseException as exc:  # noqa: BLE001
+                    writer_error.append(exc)
+
+            writer_t = threading.Thread(target=_writer, daemon=True)
+            writer_t.start()
+
             t0 = time.time()
             canceled = False
             for idx, rgb in enumerate(iter_frames(decoder, W, H)):
@@ -156,7 +178,7 @@ class JobManager:
                 if do_post:
                     pha = postprocess_alpha(pha, low, high, edge, feather)
                 rgba = np.dstack([fgr, pha])
-                encoder.stdin.write(rgba.tobytes())
+                encode_q.put(rgba.tobytes())  # blocks for backpressure
 
                 job.n_frames_done = idx + 1
                 if job.n_frames_total > 0:
@@ -167,6 +189,12 @@ class JobManager:
                     remaining = max(0, job.n_frames_total - job.n_frames_done)
                     if job.fps_processed > 0:
                         job.eta_seconds = remaining / job.fps_processed
+
+            # Drain — signal writer to stop, then wait for it to flush.
+            encode_q.put(None)
+            writer_t.join(timeout=60)
+            if writer_error:
+                raise writer_error[0]
 
             # Always close stdin so the encoder finalizes the container (writes
             # moov atom for MOV, cues for WebM) — produces a playable file even

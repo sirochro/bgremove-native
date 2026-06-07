@@ -627,10 +627,20 @@ let videoModelsLoaded = false;
 function refreshVideoEnv(h) {
   if (!videoModelsLoaded && h.models.length) {
     vModelSel.innerHTML = '';
+    // Prefer fp16 resnet50 (faster, equivalent quality on most clips), then
+    // fall back to fp32 resnet50, then any resnet50, then anything.
+    const preferOrder = [
+      /resnet50.*fp16/i, /resnet50.*fp32/i, /resnet50/i, /./,
+    ];
+    let defaultName = null;
+    for (const re of preferOrder) {
+      const m = h.models.find(m => re.test(m.name));
+      if (m) { defaultName = m.name; break; }
+    }
     h.models.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.name; opt.textContent = m.name;
-      if (m.name.includes('resnet50')) opt.selected = true;
+      if (m.name === defaultName) opt.selected = true;
       vModelSel.appendChild(opt);
     });
     videoModelsLoaded = true;
