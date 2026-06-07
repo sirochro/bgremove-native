@@ -597,7 +597,7 @@ function refreshVideoEnv(h) {
 }
 
 function updateVStartEnabled() {
-  vStartBtn.disabled = !(vInPath.value && vOutPath.value && vModelSel.value && !vCurrentJobId);
+  vStartBtn.disabled = !(vInPath.value && vModelSel.value && !vCurrentJobId);
 }
 
 function bindSlider(id, valueId) {
@@ -739,6 +739,20 @@ $('v-format').addEventListener('change', () => {
 
 vStartBtn.addEventListener('click', async () => {
   vMsg.textContent = ''; vMsg.className = 'msg';
+  if (!vOutPath.value) {
+    if (!window.pywebview || !window.pywebview.api) {
+      vMsg.textContent = 'pywebview API unavailable'; vMsg.className = 'msg error';
+      return;
+    }
+    const fmt = $('v-format').value;
+    const ext = fmt === 'webm' ? 'webm' : 'mov';
+    const base = vInPath.value ? vInPath.value.replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '') : 'output';
+    const suggested = `${base}_alpha.${ext}`;
+    const path = await window.pywebview.api.save_output_video(suggested, ext);
+    if (!path) return;
+    vOutPath.value = path;
+    updateVStartEnabled();
+  }
   const body = {
     input_path: vInPath.value,
     output_path: vOutPath.value,
