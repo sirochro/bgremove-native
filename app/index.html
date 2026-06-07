@@ -79,7 +79,7 @@
   button.danger { background: #5a2a2a; border-color: #6a3a3a; }
   button.danger:hover:not(:disabled) { background: #7a3a3a; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+  .actions { margin-top: 28px; display: flex; gap: 8px; justify-content: center; }
 
   /* Progress */
   #v-progress-section { display: none; }
@@ -183,7 +183,6 @@
         <div class="img-wrap"><span class="placeholder">ファイル選択で表示</span><img id="img-result"></div>
       </div>
     </div>
-    <div class="msg" id="img-save-msg"></div>
   </section>
 </div>
 
@@ -291,7 +290,6 @@
         <div class="img-wrap"><span class="placeholder">ファイル選択で表示</span><img id="v-prev-result"></div>
       </div>
     </div>
-    <div class="msg" id="v-prev-msg"></div>
   </section>
 
   <section id="v-progress-section">
@@ -303,7 +301,6 @@
       <div class="stat"><div class="k">FPS</div><div class="v" id="v-s-fps">—</div></div>
       <div class="stat"><div class="k">ETA</div><div class="v" id="v-s-eta">—</div></div>
     </div>
-    <div class="msg" id="v-msg2"></div>
   </section>
 </div>
 
@@ -443,7 +440,8 @@ async function refreshHealth() {
   const modelSel = $('img-model');
   const panes = $('img-panes');
   const orig = $('img-orig'), result = $('img-result'), dl = $('img-download');
-  const saveMsg = $('img-save-msg');
+  // All image-side messages collapse into #img-status so users only watch one spot.
+  const saveMsg = status;
 
   let currentResultId = null;
   let processing = false;
@@ -613,14 +611,15 @@ async function refreshHealth() {
 /* ============ Video tab ============ */
 const vModelSel = $('v-model');
 const vStartBtn = $('v-start');
-const vMsg = $('v-msg'), vMsg2 = $('v-msg2');
+// All video-side messages collapse into #v-msg so users only watch one spot.
+const vMsg = $('v-msg'), vMsg2 = vMsg;
 const vProgressSec = $('v-progress-section');
 const vPbarFill = $('v-pbar-fill');
 const vInPath = $('v-input'), vOutPath = $('v-output');
 const vDrop = $('v-drop');
 const vPreviewSec = $('v-preview-section');
 const vPrevOrig = $('v-prev-orig'), vPrevResult = $('v-prev-result');
-const vPrevMsg = $('v-prev-msg');
+const vPrevMsg = vMsg;
 let vCurrentJobId = null, vCurrentES = null;
 let vPreviewTimer = null;
 let vPreviewing = false;
