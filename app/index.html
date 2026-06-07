@@ -434,6 +434,14 @@ async function refreshHealth() {
 }
 
 /* ============ Image tab ============ */
+// Controls disabled while the image is being processed. Mirror of the
+// video tab's V_LOCK_IDS so both tabs lock the same set of inputs while
+// a backend run is in flight.
+const IMG_LOCK_IDS = [
+  'img-alpha-low', 'img-alpha-high', 'img-edge-expand', 'img-feather',
+  'img-model', 'img-defaults',
+];
+
 (() => {
   const drop = $('img-drop'), status = $('img-status');
   const pathInput = $('img-path');
@@ -445,6 +453,11 @@ async function refreshHealth() {
   let processing = false;
   let queued = false;
   let processTimer = null;
+
+  function setImageProcessingLock(busy) {
+    IMG_LOCK_IDS.forEach(id => { const el = $(id); if (el) el.disabled = busy; });
+    drop.classList.toggle('locked', busy);
+  }
 
   bindSlider('img-alpha-low', 'img-alpha-low-v');
   bindSlider('img-alpha-high', 'img-alpha-high-v');
@@ -524,6 +537,7 @@ async function refreshHealth() {
     if (processing) { queued = true; return; }
     processing = true;
     queued = false;
+    setImageProcessingLock(true);
     currentResultId = null;
     dl.disabled = true;
     status.textContent = `Processing... (model: ${modelSel.value})`;
@@ -561,6 +575,7 @@ async function refreshHealth() {
       status.className = 'msg error';
     } finally {
       processing = false;
+      setImageProcessingLock(false);
       if (queued) processImage();
     }
   }
