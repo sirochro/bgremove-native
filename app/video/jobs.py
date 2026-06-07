@@ -1,7 +1,6 @@
 """Video matting jobs: decode → RVM infer → alpha post-process → encode."""
 from __future__ import annotations
 
-import gc
 import queue
 import threading
 import time
@@ -14,7 +13,7 @@ from typing import Dict, Optional
 import numpy as np
 
 from app.alpha import clamp_params, is_default, postprocess_alpha
-from app.video.matting import RVMSession, suggest_downsample_ratio
+from app.video.matting import suggest_downsample_ratio
 from app.video.pipeline import (
     iter_frames,
     open_decoder,
@@ -22,6 +21,7 @@ from app.video.pipeline import (
     open_webm_encoder,
     probe,
 )
+from app.video.session import get_session
 
 
 class JobStatus(str, Enum):
@@ -80,21 +80,31 @@ class JobManager:
         edge_expand: int = 0,
         feather: int = 0,
         mute: bool = False,
-    ) -> Job:
-        job = Job(
-            id=uuid.uuid4().hex[:8],
-            input_path=input_path,
-            output_path=output_path,
-            model_path=model_path,
-            output_format=output_format,
-            downsample_ratio=downsample_ratio,
-            alpha_low=alpha_low,
-            alpha_high=alpha_high,
-            edge_expand=edge_expand,
-            feather=feather,
-            mute=mute,
-        )
+    ) -> Optional[Job]:
+        """Submit a new job. Returns None if another job is already in flight.
+
+        Only one job runs at a time — the RVM session, ffmpeg processes,
+        and GPU bandwidth are all single-tenant resources, so letting a
+        second job overlap just spreads contention without finishing
+        either faster.
+        """
         with self._lock:
+            for j in self.jobs.values():
+                if j.status in (JobStatus.QUEUED, JobStatus.RUNNING):
+                    return None
+            job = Job(
+                id=uuid.uuid4().hex[:8],
+                input_path=input_path,
+                output_path=output_path,
+                model_path=model_path,
+                output_format=output_format,
+                downsample_ratio=downsample_ratio,
+                alpha_low=alpha_low,
+                alpha_high=alpha_high,
+                edge_expand=edge_expand,
+                feather=feather,
+                mute=mute,
+            )
             self.jobs[job.id] = job
         threading.Thread(target=self._run, args=(job,), daemon=True).start()
         return job
@@ -113,7 +123,6 @@ class JobManager:
         decoder = None
         encoder = None
         writer_t = None
-        session = None
         try:
             job.status = JobStatus.RUNNING
             job.started_at = time.time()
@@ -126,7 +135,10 @@ class JobManager:
             if dsr is None:
                 dsr = suggest_downsample_ratio(W, H)
 
-            session = RVMSession(job.model_path)
+            # Shared session cache. reset() clears any recurrent state
+            # left from a previous clip (preview or earlier job).
+            session = get_session(job.model_path)
+            session.reset()
             job.provider = session.active_provider
 
             audio_source = None if job.mute else job.input_path
@@ -265,8 +277,3 @@ class JobManager:
                     Path(job.output_path).unlink(missing_ok=True)
                 except Exception:
                     pass
-            # Release the per-job RVM session deterministically so its
-            # DirectML VRAM is freed before the next job starts.
-            if session is not None:
-                session = None
-                gc.collect()

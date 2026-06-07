@@ -138,6 +138,8 @@ def create_job(req: JobRequest) -> dict:
         feather=req.feather,
         mute=req.mute,
     )
+    if job is None:
+        raise HTTPException(409, "Another job is already in progress")
     return {"job_id": job.id}
 
 

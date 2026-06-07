@@ -702,7 +702,9 @@ function updateVStartEnabled() {
     vStartBtn.textContent = '処理開始';
     vStartBtn.classList.remove('danger');
     vStartBtn.classList.add('primary');
-    vStartBtn.disabled = !(vInPath.value && vModelSel.value);
+    // Block start while a preview run is in flight — submit would race
+    // the preview for the shared RVM session.
+    vStartBtn.disabled = vPreviewing || !(vInPath.value && vModelSel.value);
   }
   V_LOCK_IDS.forEach(id => { const el = $(id); if (el) el.disabled = busy; });
   vDrop.classList.toggle('locked', busy);
@@ -767,6 +769,7 @@ async function previewVideo() {
   if (vCurrentJobId) return;  // don't fight the job for the GPU/session
   if (vPreviewing) { vPreviewQueued = true; return; }
   vPreviewing = true; vPreviewQueued = false;
+  updateVStartEnabled();
   vPreviewSec.style.display = 'block';
   setVMsg('Processing preview...');
   const body = {
@@ -800,6 +803,7 @@ async function previewVideo() {
     setVMsg('Preview error: ' + e.message, 'msg error');
   } finally {
     vPreviewing = false;
+    updateVStartEnabled();
     if (vPreviewQueued) previewVideo();
   }
 }
